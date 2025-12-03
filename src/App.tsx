@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Calendar, Plus, BarChart2, Save, Trash2, Dumbbell, ChevronLeft, ChevronRight, Activity, TrendingUp, Layers, Loader, Cloud, LogIn, User, LogOut } from 'lucide-react'
+import { Calendar, Plus, BarChart2, Save, Trash2, Dumbbell, ChevronLeft, ChevronRight, Activity, TrendingUp, Loader, Cloud, LogIn, User, LogOut } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { initializeApp } from 'firebase/app'
 import { getAuth, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth'
 import { getFirestore, doc, setDoc, onSnapshot, collection, query } from 'firebase/firestore'
 
-// Interfaces de tipos
 interface Set {
   weight: string
   reps: string
@@ -36,7 +35,6 @@ const FIREBASE_CONFIG = {
 
 const APP_ID = FIREBASE_CONFIG.appId
 
-// Utilitarios tipados
 const getDaysInMonth = (year: number, month: number): number => new Date(year, month + 1, 0).getDate()
 const getFirstDayOfMonth = (year: number, month: number): number => new Date(year, month, 1).getDay()
 const formatDate = (date: Date): string => date.toISOString().split('T')[0]
@@ -48,7 +46,6 @@ const ARNOLD_SPLIT: Record<string, string[]> = {
 }
 
 const App = () => {
-  // Estados tipados
   const [view, setView] = useState<'dashboard' | 'calendar' | 'log' | 'stats'>('dashboard')
   const [workouts, setWorkouts] = useState<Workout[]>([])
   const [selectedDate, setSelectedDate] = useState(new Date())
@@ -66,7 +63,6 @@ const App = () => {
 
   const initialAuthToken: string | null = typeof window !== 'undefined' && (window as any).initialAuthToken ? (window as any).initialAuthToken : null
 
-  // Inicialización Firebase
   useEffect(() => {
     const app = initializeApp(FIREBASE_CONFIG)
     const firestore = getFirestore(app)
@@ -106,14 +102,12 @@ const App = () => {
     authenticate()
   }, [])
 
-  // Mostrar modal si no hay sesión
   useEffect(() => {
     if (isAuthReady && !userId) {
       setShowAuthModal(true)
     }
   }, [isAuthReady, userId])
 
-  // Carga de workouts
   useEffect(() => {
     if (!isAuthReady || !db || !userId) {
       setWorkouts([])
@@ -133,7 +127,6 @@ const App = () => {
     return unsubscribe
   }, [isAuthReady, db, userId])
 
-  // Cargar ejercicios existentes
   useEffect(() => {
     if (view === 'log' && userId) {
       const existingWorkout = workouts.find(w => w.date === logDate)
@@ -235,31 +228,27 @@ const App = () => {
       await setDoc(docRef, newWorkout)
       setView('calendar')
       setCurrentExercises([])
-      console.log('Entrenamiento guardado con éxito en Firestore!')
     } catch (error) {
       console.error('Error saving workout to Firestore', error)
       alert('Error al guardar el entrenamiento. Verifica tu conexión.')
     }
   }
 
-  // Datos para gráficos
-  const chartData = useMemo((): { date: string; weight: number }[] => {
+  const chartData = useMemo(() => {
     if (!userId || workouts.length === 0) return []
     const dataPoints: { date: string; weight: number }[] = []
     workouts
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .forEach((workout) => {
-        workout.exercises.forEach((ex) => {
+      .forEach(workout => {
+        workout.exercises.forEach(ex => {
           if (ex.name === statExercise) {
             const maxWeight = Math.max(...ex.sets.map(s => parseFloat(s.weight) || 0))
-            if (maxWeight > 0) {
-              dataPoints.push({ date: workout.date, weight: maxWeight })
-            }
+            if (maxWeight > 0) dataPoints.push({ date: workout.date, weight: maxWeight })
           }
         })
       })
     return dataPoints
-  }, [workouts, statExercise, userId])
+  }, [statExercise, userId, workouts])
 
   const allExercisesList = useMemo(() => {
     const set = new Set(Object.values(ARNOLD_SPLIT).flat())
@@ -267,7 +256,7 @@ const App = () => {
       workouts.forEach(w => w.exercises.forEach(e => set.add(e.name)))
     }
     return Array.from(set).sort()
-  }, [workouts, userId])
+  }, [userId, workouts])
 
   if (isLoading) {
     return (
@@ -283,20 +272,20 @@ const App = () => {
 
   const AuthModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-xl p-8 max-w-sm w-full shadow-2xl transform transition-all scale-100 animate-fade-in-up">
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-8 max-w-sm w-full shadow-2xl transform transition-all scale-100">
         <Dumbbell className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
         <h2 className="text-2xl font-bold text-white text-center mb-2">Bienvenido a Arnold Tracker</h2>
         <p className="text-slate-400 text-center mb-6">
           Para guardar tu progreso de entrenamiento de forma persistente y no perder tus récords, por favor, inicia sesión.
         </p>
         <button onClick={signInWithGoogle} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-3 transition-all shadow-lg shadow-blue-900/50">
-          <svg className="w-5 h-5" viewBox="0 0 48 48">
-            <path fill="#FFC107" d="M43.61 20.08v3.42H24V20.08z"/>
-            <path fill="#FF3D00" d="M6.39 20.08V23.5H24V20.08z"/>
-            <path fill="#4CAF50" d="M6.39 30.22v3.42H24V30.22z"/>
-            <path fill="#1976D2" d="M43.61 30.22V33.64H24V30.22z"/>
-            <path fill="#2196F3" d="M24 6.39C14.7 6.39 6.39 14.7 6.39 24s8.31 17.61 17.61 17.61 17.61-8.31 17.61-17.61H24z"/>
-            <path fill="#BBDEFB" d="M24 6.39c8.31 0 15.22 5.09 16.94 12.08H24z"/>
+          <svg className="w-5 h-5" viewBox="0 0 48 48" >
+            <path fill="#FFC107" d="M43.61 20.08v3.42H24V20.08z" />
+            <path fill="#FF3D00" d="M6.39 20.08V23.5H24V20.08z" />
+            <path fill="#4CAF50" d="M6.39 30.22v3.42H24V30.22z" />
+            <path fill="#1976D2" d="M43.61 30.22V33.64H24V30.22z" />
+            <path fill="#2196F3" d="M24 6.39C14.7 6.39 6.39 14.7 6.39 24s8.31 17.61 17.61 17.61 17.61-8.31 17.61-17.61H24z" />
+            <path fill="#BBDEFB" d="M24 6.39c8.31 0 15.22 5.09 16.94 12.08H24z" />
           </svg>
           Iniciar Sesión con Google
         </button>
@@ -305,32 +294,24 @@ const App = () => {
     </div>
   )
 
-  const renderCalendar = () => {
+  const renderCalendar = (): React.ReactElement[] => {
     const year = selectedDate.getFullYear()
     const month = selectedDate.getMonth()
     const daysInMonth = getDaysInMonth(year, month)
     const firstDay = getFirstDayOfMonth(year, month)
-    const days: JSX.Element[] = []
+    const days: React.ReactElement[] = []
 
-    // Relleno días vacíos
-    for (let i = 0; i < firstDay; i++) {
-      days.push(<div key={`empty-${i}`} className="h-10 w-10" />)
-    }
+    for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="h-10 w-10" />)
 
-    // Días del mes
     for (let day = 1; day <= daysInMonth; day++) {
       const currentDayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
       const workoutOnDay = workouts.find(w => w.date === currentDayString)
       let bgClass = 'bg-slate-800 hover:bg-slate-700 text-slate-300'
 
       if (userId && workoutOnDay) {
-        if (workoutOnDay.split.includes('Pierna')) {
-          bgClass = 'bg-red-900/80 border border-red-500 text-white font-bold'
-        } else if (workoutOnDay.split.includes('Pecho')) {
-          bgClass = 'bg-blue-900/80 border border-blue-500 text-white font-bold'
-        } else {
-          bgClass = 'bg-green-900/80 border border-green-500 text-white font-bold'
-        }
+        if (workoutOnDay.split.includes('Pierna')) bgClass = 'bg-red-900/80 border border-red-500 text-white font-bold'
+        else if (workoutOnDay.split.includes('Pecho')) bgClass = 'bg-blue-900/80 border border-blue-500 text-white font-bold'
+        else bgClass = 'bg-green-900/80 border border-green-500 text-white font-bold'
       }
 
       days.push(
@@ -358,7 +339,6 @@ const App = () => {
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans pb-20 md:pb-0">
       {showAuthModal && <AuthModal />}
 
-      {/* Header */}
       <header className={`bg-slate-900 p-4 border-b border-slate-800 sticky top-0 z-10 shadow-lg ${showAuthModal ? 'pointer-events-none' : ''}`}>
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent flex items-center gap-2">
