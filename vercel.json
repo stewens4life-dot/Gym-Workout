@@ -1,6 +1,0 @@
-{
-      "framework": null,
-      "buildCommand": "echo 'Bypass build step for single file React setup'",
-      "outputDirectory": ".",
-      "installCommand": "echo 'No install needed'"
-    }
