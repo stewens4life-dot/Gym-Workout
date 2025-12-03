@@ -1,3 +1,19 @@
-@import "tailwindcss";
+/* |--------------------------------------------------------------------------
+| CONFIGURACIÓN DE TAILWIND CSS
+|--------------------------------------------------------------------------
+| Estas directivas son las únicas necesarias para inyectar 
+| el código de Tailwind compilado.
+*/
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-
+/* |--------------------------------------------------------------------------
+| FUENTES PERSONALIZADAS
+|--------------------------------------------------------------------------
+| Aquí se importa la fuente 'Inter' para el cuerpo del documento.
+*/
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+body {
+    font-family: 'Inter', sans-serif;
+}
