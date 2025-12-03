@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arnold Workout Tracker</title>
+    <!-- Incluye el script de Tailwind CSS para el estilo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #020617; } /* bg-slate-950 */
+    </style>
+</head>
+<body>
+    <!-- Este es el contenedor donde React va a inyectar la aplicación -->
+    <div id="root"></div>
+
+    <!-- Carga las librerías de React desde CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Carga Babel para que el navegador pueda interpretar el código JSX (App.jsx) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Carga tu componente principal (App.jsx) -->
+    <script type="text/babel" src="./App.jsx"></script>
+
+    <script type="text/babel">
+        // Punto de entrada de la aplicación: Renderiza el componente App dentro del elemento con id="root"
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
