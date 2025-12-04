@@ -809,15 +809,19 @@ const App = () => {
       setSelectedSplit(Object.keys(newSplits)[0])
     }
 
-    // Guardar inmediatamente
+    // Guardar inmediatamente - usar setDoc sin merge para eliminar completamente el campo
     if (db && userId) {
       try {
         const splitsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splits')
-        await setDoc(splitsRef, newSplits, { merge: true })
+        // Usar setDoc sin merge para sobrescribir completamente y eliminar el campo
+        await setDoc(splitsRef, newSplits)
+        
         const colorsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitColors')
-        await setDoc(colorsRef, newColors, { merge: true })
+        await setDoc(colorsRef, newColors)
+        
         const musclesRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitMuscles')
-        await setDoc(musclesRef, newMuscles, { merge: true })
+        await setDoc(musclesRef, newMuscles)
+        
         showNotification('Split eliminado exitosamente', 'success')
       } catch (error) {
         console.error('Error deleting split', error)
