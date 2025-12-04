@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Calendar, Plus, BarChart2, Save, Trash2, Dumbbell, ChevronLeft, ChevronRight, Activity, TrendingUp, Loader, Cloud, LogIn, User, LogOut, Layers, BicepsFlexed, Target, Flame, Trophy, Zap, TrendingDown, Award, Weight, Gauge, ArrowUpRight, ArrowDownRight, UserCircle, Ruler, Scale, Heart, Edit2, X, Check, Sun, Moon, Coffee } from 'lucide-react'
+import { Calendar, Plus, BarChart2, Save, Trash2, Dumbbell, ChevronLeft, ChevronRight, Activity, TrendingUp, Loader, Cloud, LogIn, User, LogOut, Layers, BicepsFlexed, Target, Flame, Trophy, Zap, TrendingDown, Award, Weight, Gauge, ArrowUpRight, ArrowDownRight, UserCircle, Ruler, Scale, Heart, Edit2, X, Check, Sun, Moon, Coffee, StickyNote } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { initializeApp } from 'firebase/app'
 import { getAuth, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, signOut } from 'firebase/auth'
@@ -42,6 +42,14 @@ interface BodyMeasurement {
   thighs?: number | undefined // en cm
 }
 
+interface QuickNote {
+  id: number
+  date: string
+  content: string
+  createdAt: number
+  color?: string // Color de la nota (hex o nombre de color)
+}
+
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDfR69yaxonCqGZQliAmopg-ywtUr8LAzk",
   authDomain: "arnold-tracker.firebaseapp.com",
@@ -65,7 +73,7 @@ const DEFAULT_SPLIT: Record<string, string[]> = {
 }
 
 const App = () => {
-  const [view, setView] = useState<'dashboard' | 'calendar' | 'log' | 'stats' | 'profile'>('dashboard')
+  const [view, setView] = useState<'dashboard' | 'calendar' | 'log' | 'stats' | 'profile' | 'notes'>('dashboard')
   const [workouts, setWorkouts] = useState<Workout[]>([])
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [logDate, setLogDate] = useState(formatDate(new Date()))
@@ -122,6 +130,26 @@ const App = () => {
   // Delete Confirmation Modal
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [workoutToDelete, setWorkoutToDelete] = useState<string | null>(null)
+  
+  // Quick Notes State
+  const [quickNotes, setQuickNotes] = useState<QuickNote[]>([])
+  const [newNote, setNewNote] = useState('')
+  const [noteDate, setNoteDate] = useState(formatDate(new Date()))
+  const [noteColor, setNoteColor] = useState('yellow')
+  const [editingNote, setEditingNote] = useState<QuickNote | null>(null)
+  const [showNoteModal, setShowNoteModal] = useState(false)
+  
+  // Colores disponibles para notas
+  const noteColors = [
+    { name: 'yellow', bg: 'bg-yellow-100', border: 'border-yellow-300', text: 'text-yellow-800', darkBg: 'bg-yellow-900/30', darkBorder: 'border-yellow-700', darkText: 'text-yellow-200' },
+    { name: 'blue', bg: 'bg-blue-100', border: 'border-blue-300', text: 'text-blue-800', darkBg: 'bg-blue-900/30', darkBorder: 'border-blue-700', darkText: 'text-blue-200' },
+    { name: 'green', bg: 'bg-emerald-100', border: 'border-emerald-300', text: 'text-emerald-800', darkBg: 'bg-emerald-900/30', darkBorder: 'border-emerald-700', darkText: 'text-emerald-200' },
+    { name: 'purple', bg: 'bg-purple-100', border: 'border-purple-300', text: 'text-purple-800', darkBg: 'bg-purple-900/30', darkBorder: 'border-purple-700', darkText: 'text-purple-200' },
+    { name: 'pink', bg: 'bg-pink-100', border: 'border-pink-300', text: 'text-pink-800', darkBg: 'bg-pink-900/30', darkBorder: 'border-pink-700', darkText: 'text-pink-200' },
+    { name: 'orange', bg: 'bg-orange-100', border: 'border-orange-300', text: 'text-orange-800', darkBg: 'bg-orange-900/30', darkBorder: 'border-orange-700', darkText: 'text-orange-200' },
+    { name: 'red', bg: 'bg-red-100', border: 'border-red-300', text: 'text-red-800', darkBg: 'bg-red-900/30', darkBorder: 'border-red-700', darkText: 'text-red-200' },
+    { name: 'cyan', bg: 'bg-cyan-100', border: 'border-cyan-300', text: 'text-cyan-800', darkBg: 'bg-cyan-900/30', darkBorder: 'border-cyan-700', darkText: 'text-cyan-200' },
+  ]
   
   // Cargar preferencia de tema desde Firestore
   useEffect(() => {
@@ -289,6 +317,26 @@ const App = () => {
     })
   }, [isAuthReady, db, userId])
 
+  // Cargar notas rápidas
+  useEffect(() => {
+    if (!isAuthReady || !db || !userId) {
+      setQuickNotes([])
+      return
+    }
+
+    const notesCollectionRef = collection(db, 'artifacts', APP_ID, 'users', userId, 'notes')
+    const q = query(notesCollectionRef)
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedNotes: QuickNote[] = []
+      snapshot.forEach((doc) => loadedNotes.push(doc.data() as QuickNote))
+      setQuickNotes(loadedNotes.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
+    }, (error) => {
+      console.error('Error fetching notes from Firestore', error)
+    })
+
+    return unsubscribe
+  }, [isAuthReady, db, userId])
+
   useEffect(() => {
     if (view === 'log' && userId) {
       const existingWorkout = workouts.find(w => w.date === logDate)
@@ -411,6 +459,81 @@ const App = () => {
       showNotification('Error al eliminar el entrenamiento', 'error')
       setShowDeleteModal(false)
       setWorkoutToDelete(null)
+    }
+  }
+
+  // Abrir modal de edición
+  const openEditNoteModal = (note: QuickNote) => {
+    setEditingNote(note)
+    setNewNote(note.content)
+    setNoteDate(note.date)
+    setNoteColor(note.color || 'yellow')
+    setShowNoteModal(true)
+  }
+
+  // Cerrar modal de edición
+  const closeNoteModal = () => {
+    setShowNoteModal(false)
+    setEditingNote(null)
+    setNewNote('')
+    setNoteDate(formatDate(new Date()))
+    setNoteColor('yellow')
+  }
+
+  // Guardar nota rápida (crear o editar)
+  const saveQuickNote = async () => {
+    if (!db || !userId) {
+      showNotification('Error: No se puede guardar la nota.', 'error')
+      return
+    }
+
+    if (!newNote.trim()) {
+      showNotification('Por favor, escribe algo en la nota.', 'warning')
+      return
+    }
+
+    // Validar que la fecha no sea futura
+    const today = formatDate(new Date())
+    if (noteDate > today) {
+      showNotification('No puedes crear notas para fechas futuras.', 'warning')
+      return
+    }
+
+    try {
+      const noteId = editingNote ? editingNote.id : Date.now()
+      const note: QuickNote = {
+        id: noteId,
+        date: noteDate,
+        content: newNote.trim(),
+        createdAt: editingNote ? editingNote.createdAt : Date.now(),
+        color: noteColor
+      }
+
+      const docRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'notes', `${noteDate}_${noteId}`)
+      await setDoc(docRef, note, { merge: true })
+      
+      showNotification(editingNote ? 'Nota actualizada exitosamente' : 'Nota guardada exitosamente', 'success')
+      closeNoteModal()
+    } catch (error) {
+      console.error('Error saving note', error)
+      showNotification('Error al guardar la nota', 'error')
+    }
+  }
+
+  // Eliminar nota rápida
+  const deleteQuickNote = async (noteId: number, noteDate: string) => {
+    if (!db || !userId) {
+      showNotification('Error: No se puede eliminar la nota.', 'error')
+      return
+    }
+
+    try {
+      const docRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'notes', `${noteDate}_${noteId}`)
+      await deleteDoc(docRef)
+      showNotification('Nota eliminada exitosamente', 'success')
+    } catch (error) {
+      console.error('Error deleting note', error)
+      showNotification('Error al eliminar la nota', 'error')
     }
   }
 
@@ -1363,6 +1486,107 @@ const App = () => {
     )
   }
 
+  const NoteEditModal = () => {
+    if (!showNoteModal) return null
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div className={`${bgCard} border ${borderSecondary} rounded-xl p-6 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto`}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className={`text-xl font-bold ${textMain} flex items-center gap-2`}>
+              <StickyNote className="text-yellow-400" />
+              {editingNote ? 'Editar Nota' : 'Nueva Nota'}
+            </h2>
+            <button
+              onClick={closeNoteModal}
+              className={`p-2 rounded-lg ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-200'} transition-colors ${textSecondary}`}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className={`block text-sm ${textSecondary} mb-2`}>Fecha</label>
+              <input
+                type="date"
+                value={noteDate}
+                max={formatDate(new Date())}
+                onChange={(e) => {
+                  const selectedDate = e.target.value
+                  const today = formatDate(new Date())
+                  if (selectedDate > today) {
+                    setNoteDate(today)
+                    showNotification('No puedes crear notas para fechas futuras.', 'warning')
+                    return
+                  }
+                  setNoteDate(selectedDate)
+                }}
+                className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-yellow-500 disabled:opacity-50`}
+                disabled={!userId}
+              />
+            </div>
+
+            <div>
+              <label className={`block text-sm ${textSecondary} mb-2`}>Contenido</label>
+              <textarea
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                placeholder="Escribe tu nota, recordatorio o apunte aquí..."
+                rows={6}
+                className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-yellow-500 disabled:opacity-50 resize-none`}
+                disabled={!userId}
+              />
+            </div>
+
+            <div>
+              <label className={`block text-sm ${textSecondary} mb-3`}>Color</label>
+              <div className="grid grid-cols-4 gap-2">
+                {noteColors.map((color) => (
+                  <button
+                    key={color.name}
+                    onClick={() => setNoteColor(color.name)}
+                    className={`p-3 rounded-lg border-2 transition-all ${
+                      noteColor === color.name
+                        ? isDarkMode
+                          ? `${color.darkBorder} ${color.darkBg} border-2`
+                          : `${color.border} ${color.bg} border-2`
+                        : isDarkMode
+                        ? 'border-slate-700 hover:border-slate-600'
+                        : 'border-slate-300 hover:border-slate-400'
+                    }`}
+                  >
+                    <div
+                      className={`w-full h-8 rounded ${
+                        isDarkMode ? color.darkBg : color.bg
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={closeNoteModal}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-900'}`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveQuickNote}
+                disabled={!userId || !newNote.trim()}
+                className="flex-1 py-2 px-4 rounded-lg font-medium bg-yellow-600 hover:bg-yellow-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editingNote ? 'Actualizar' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderCalendar = (): React.ReactElement[] => {
     const year = selectedDate.getFullYear()
     const month = selectedDate.getMonth()
@@ -1370,17 +1594,36 @@ const App = () => {
     const firstDay = getFirstDayOfMonth(year, month)
     const days: React.ReactElement[] = []
 
-    for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="h-10 w-10" />)
+    for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="h-16 w-16 md:h-20 md:w-20" />)
 
     for (let day = 1; day <= daysInMonth; day++) {
       const currentDayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      const todayString = formatDate(new Date())
+      const isFutureDate = currentDayString > todayString
+
       const workoutOnDay = workouts.find(w => w.date === currentDayString)
-      let bgClass = 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+      let bgClass = isDarkMode 
+        ? `${bgCardHover} hover:${bgCard} ${textSecondary}` 
+        : `${bgCardHover} hover:${bgCard} ${textSecondary}`
 
       if (userId && workoutOnDay) {
-        if (workoutOnDay.split.includes('Pierna')) bgClass = 'bg-red-900/80 border border-red-500 text-white font-bold'
-        else if (workoutOnDay.split.includes('Pecho')) bgClass = 'bg-blue-900/80 border border-blue-500 text-white font-bold'
-        else bgClass = 'bg-green-900/80 border border-green-500 text-white font-bold'
+        if (workoutOnDay.isRestDay) {
+          bgClass = isDarkMode 
+            ? 'bg-emerald-900/50 border border-emerald-500 text-emerald-200 font-bold' 
+            : 'bg-emerald-200 border border-emerald-400 text-emerald-800 font-bold'
+        } else if (workoutOnDay.split.includes('Pierna')) {
+          bgClass = isDarkMode 
+            ? 'bg-red-900/80 border border-red-500 text-white font-bold' 
+            : 'bg-red-200 border border-red-400 text-red-800 font-bold'
+        } else if (workoutOnDay.split.includes('Pecho')) {
+          bgClass = isDarkMode 
+            ? 'bg-blue-900/80 border border-blue-500 text-white font-bold' 
+            : 'bg-blue-200 border border-blue-400 text-blue-800 font-bold'
+        } else {
+          bgClass = isDarkMode 
+            ? 'bg-purple-900/80 border border-purple-500 text-white font-bold' 
+            : 'bg-purple-200 border border-purple-400 text-purple-800 font-bold'
+        }
       }
 
       days.push(
@@ -1391,10 +1634,15 @@ const App = () => {
               setShowAuthModal(true)
               return
             }
+            if (isFutureDate) {
+              showNotification('No puedes seleccionar fechas futuras.', 'warning')
+              return
+            }
             setLogDate(currentDayString)
             setView('log')
           }}
-          className={`h-10 w-10 md:h-14 md:w-14 rounded-lg flex items-center justify-center text-sm transition-all ${bgClass}`}
+          className={`h-16 w-16 md:h-20 md:w-20 rounded-lg flex items-center justify-center text-base md:text-lg font-medium transition-all ${bgClass} ${isFutureDate ? 'opacity-40 cursor-not-allowed' : ''}`}
+          disabled={isFutureDate}
         >
           {day}
         </button>
@@ -1424,6 +1672,7 @@ const App = () => {
       {showAuthModal && <AuthModal />}
       <NotificationToast />
       <DeleteConfirmationModal />
+      <NoteEditModal />
 
       <header className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} p-4 border-b sticky top-0 z-10 shadow-lg transition-colors ${showAuthModal ? 'pointer-events-none' : ''}`}>
         <div className="max-w-4xl mx-auto flex justify-between items-center">
@@ -1707,26 +1956,30 @@ const App = () => {
               </button>
             </div>
 
-            <div className={`grid grid-cols-7 gap-2 text-center text-sm ${textMuted} mb-2`}>
+            <div className={`grid grid-cols-7 gap-3 text-center text-sm font-semibold ${textMuted} mb-3`}>
               <div>D</div><div>L</div><div>M</div><div>X</div><div>J</div><div>V</div><div>S</div>
             </div>
 
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-3">
               {renderCalendar()}
             </div>
 
-            <div className={`mt-6 flex gap-4 text-xs justify-center ${textSecondary}`}>
+            <div className={`mt-6 flex flex-wrap gap-4 text-xs justify-center ${textSecondary}`}>
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-blue-900 border border-blue-500 rounded"></div>
                 Pecho/Espalda
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-green-900 border border-green-500 rounded"></div>
+                <div className="w-3 h-3 bg-purple-900 border border-purple-500 rounded"></div>
                 Hombro/Brazos
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-red-900 border border-red-500 rounded"></div>
                 Pierna
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-emerald-900 border border-emerald-500 rounded"></div>
+                Descanso
               </div>
             </div>
           </div>
@@ -2153,14 +2406,14 @@ const App = () => {
               {/* Fila 2: Récords y Volumen */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Récords Personales */}
-                <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 hover:border-yellow-500 transition-all">
-                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <div className={`${bgCard} p-6 rounded-xl border ${borderMain} hover:border-yellow-500 transition-all`}>
+                  <h2 className={`text-xl font-bold ${textMain} mb-4 flex items-center gap-2`}>
                     <Award className="text-yellow-400" />
                     Récords Personales
                   </h2>
                   <div className="space-y-3 max-h-80 overflow-y-auto">
                     {recordsStats.personalRecords.length === 0 ? (
-                      <div className="text-center py-8 text-slate-500">
+                      <div className={`text-center py-8 ${textMuted}`}>
                         <Award className="w-10 h-10 mx-auto mb-2 opacity-50" />
                         <p className="text-sm">{userId ? 'Sin récords' : 'Inicia sesión'}</p>
               </div>
@@ -2168,24 +2421,24 @@ const App = () => {
                       recordsStats.personalRecords.slice(0, 6).map((record) => (
                         <div 
                           key={record.exercise}
-                          className="bg-slate-800/50 p-3 rounded-lg border border-slate-700 hover:border-yellow-500 transition-all"
+                          className={`${bgCardHover} p-3 rounded-lg border ${borderSecondary} hover:border-yellow-500 transition-all`}
                         >
                           <div className="flex items-center gap-2 mb-2">
                             <Trophy className="w-4 h-4 text-yellow-400" />
-                            <h3 className="font-bold text-white text-sm">{record.exercise}</h3>
+                            <h3 className={`font-bold ${textMain} text-sm`}>{record.exercise}</h3>
                           </div>
                           <div className="grid grid-cols-3 gap-2 text-xs">
                             <div>
-                              <div className="text-slate-400">Peso</div>
+                              <div className={textSecondary}>Peso</div>
                               <div className="font-bold text-yellow-400">{record.maxWeight.weight}kg</div>
                             </div>
                             <div>
-                              <div className="text-slate-400">Volumen</div>
-                              <div className="font-semibold text-purple-400">{Math.round(record.maxVolume.volume / 1000)}k</div>
+                              <div className={textSecondary}>Volumen</div>
+                              <div className={`font-semibold ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{Math.round(record.maxVolume.volume / 1000)}k</div>
                             </div>
                             <div>
-                              <div className="text-slate-400">Reps</div>
-                              <div className="font-semibold text-blue-400">{record.maxReps.reps}</div>
+                              <div className={textSecondary}>Reps</div>
+                              <div className={`font-semibold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{record.maxReps.reps}</div>
                             </div>
                           </div>
                         </div>
@@ -2195,14 +2448,14 @@ const App = () => {
                 </div>
 
                 {/* Volumen por Ejercicio */}
-                <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 hover:border-purple-500 transition-all">
-                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                    <Weight className="text-purple-400" />
+                <div className={`${bgCard} p-6 rounded-xl border ${borderMain} hover:border-purple-500 transition-all`}>
+                  <h2 className={`text-xl font-bold ${textMain} mb-4 flex items-center gap-2`}>
+                    <Weight className={isDarkMode ? 'text-purple-400' : 'text-purple-600'} />
                     Volumen por Ejercicio
                   </h2>
                   <div className="space-y-2 max-h-80 overflow-y-auto">
                     {volumeByExerciseStats.length === 0 ? (
-                      <div className="text-center py-8 text-slate-500">
+                      <div className={`text-center py-8 ${textMuted}`}>
                         <Weight className="w-10 h-10 mx-auto mb-2 opacity-50" />
                         <p className="text-sm">{userId ? 'Sin datos' : 'Inicia sesión'}</p>
                       </div>
@@ -2210,21 +2463,21 @@ const App = () => {
                       volumeByExerciseStats.slice(0, 8).map((stat) => (
                         <div 
                           key={stat.name} 
-                          className="bg-slate-800/50 p-3 rounded-lg border border-slate-700 hover:border-purple-500 transition-all"
+                          className={`${bgCardHover} p-3 rounded-lg border ${borderSecondary} hover:border-purple-500 transition-all`}
                         >
                           <div className="flex justify-between items-center mb-1">
-                            <h3 className="font-semibold text-white text-sm">{stat.name}</h3>
+                            <h3 className={`font-semibold ${textMain} text-sm`}>{stat.name}</h3>
                             <div className="text-right">
-                              <div className="text-sm font-bold text-purple-400">{stat.totalVolume.toLocaleString()} kg</div>
+                              <div className={`text-sm font-bold ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{stat.totalVolume.toLocaleString()} kg</div>
                             </div>
                           </div>
-                          <div className="flex justify-between items-center text-xs text-slate-400 mb-1">
+                          <div className={`flex justify-between items-center text-xs ${textSecondary} mb-1`}>
                             <span>{stat.sessions} sesiones</span>
                             <span>Prom: {stat.avgVolume.toLocaleString()} kg</span>
                           </div>
-                          <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                          <div className={`h-1.5 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-300'} rounded-full overflow-hidden`}>
                             <div 
-                              className="h-full bg-purple-500 transition-all"
+                              className={`h-full ${isDarkMode ? 'bg-purple-500' : 'bg-purple-600'} transition-all`}
                               style={{ width: `${(stat.totalVolume / volumeByExerciseStats[0].totalVolume) * 100}%` }}
                             />
                           </div>
@@ -2358,60 +2611,60 @@ const App = () => {
             )}
 
             {/* Perfil Personal */}
-            <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
-              <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                <UserCircle className="text-blue-400" />
+            <div className={`${bgCard} p-6 rounded-xl border ${borderMain}`}>
+              <h2 className={`text-xl font-bold ${textMain} mb-4 flex items-center gap-2`}>
+                <UserCircle className={isDarkMode ? 'text-blue-400' : 'text-blue-600'} />
                 Datos Personales
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Edad</label>
+                  <label className={`block text-sm ${textSecondary} mb-2`}>Edad</label>
                   <input
                     type="number"
                     value={userProfile?.age || ''}
                     onChange={(e) => setUserProfile({ ...userProfile || { age: 0, height: 0, weight: 0 }, age: parseInt(e.target.value) || 0 })}
-                    className="w-full bg-slate-800 text-white p-3 rounded-lg border border-slate-700 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                    className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-blue-500 disabled:opacity-50`}
                     disabled={!userId}
                     placeholder="Años"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Altura (cm)</label>
+                  <label className={`block text-sm ${textSecondary} mb-2`}>Altura (cm)</label>
                   <input
                     type="number"
                     value={userProfile?.height || ''}
                     onChange={(e) => setUserProfile({ ...userProfile || { age: 0, height: 0, weight: 0 }, height: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-slate-800 text-white p-3 rounded-lg border border-slate-700 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                    className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-blue-500 disabled:opacity-50`}
                     disabled={!userId}
                     placeholder="cm"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Peso Actual (kg)</label>
+                  <label className={`block text-sm ${textSecondary} mb-2`}>Peso Actual (kg)</label>
                   <input
                     type="number"
                     step="0.1"
                     value={userProfile?.weight || ''}
                     onChange={(e) => setUserProfile({ ...userProfile || { age: 0, height: 0, weight: 0 }, weight: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-slate-800 text-white p-3 rounded-lg border border-slate-700 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                    className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-blue-500 disabled:opacity-50`}
                     disabled={!userId}
                     placeholder="kg"
                   />
                 </div>
               </div>
               <div className="mt-4">
-                <label className="block text-sm text-slate-400 mb-2">Días de Descanso Permitidos por Semana</label>
+                <label className={`block text-sm ${textSecondary} mb-2`}>Días de Descanso Permitidos por Semana</label>
                 <input
                   type="number"
                   min="0"
                   max="6"
                   value={userProfile?.restDaysPerWeek || 0}
                   onChange={(e) => setUserProfile({ ...userProfile || { age: 0, height: 0, weight: 0, restDaysPerWeek: 0 }, restDaysPerWeek: parseInt(e.target.value) || 0 })}
-                  className="w-full bg-slate-800 text-white p-3 rounded-lg border border-slate-700 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                  className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-blue-500 disabled:opacity-50`}
                   disabled={!userId}
                   placeholder="0"
                 />
-                <p className="text-xs text-slate-500 mt-1">Los días de descanso no romperán tu racha hasta alcanzar este límite semanal.</p>
+                <p className={`text-xs ${textMuted} mt-1`}>Los días de descanso no romperán tu racha hasta alcanzar este límite semanal.</p>
               </div>
                       <button
                 onClick={saveProfile}
@@ -2423,18 +2676,18 @@ const App = () => {
 
               {/* IMC */}
               {userProfile && userProfile.height > 0 && userProfile.weight > 0 && (
-                <div className="mt-6 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                <div className={`mt-6 p-4 ${bgCardHover} rounded-lg border ${borderSecondary}`}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm text-slate-400">Índice de Masa Corporal (IMC)</div>
-                      <div className="text-3xl font-bold text-white mt-1">{calculateBMI()}</div>
+                      <div className={`text-sm ${textSecondary}`}>Índice de Masa Corporal (IMC)</div>
+                      <div className={`text-3xl font-bold ${textMain} mt-1`}>{calculateBMI()}</div>
                       {calculateBMI() && (
                         <div className={`text-sm font-semibold mt-1 ${getBMICategory(calculateBMI()!).color}`}>
                           {getBMICategory(calculateBMI()!).label}
                   </div>
                       )}
                 </div>
-                    <Heart className="w-12 h-12 text-blue-400 opacity-50" />
+                    <Heart className={`w-12 h-12 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'} opacity-50`} />
                     </div>
                 </div>
               )}
@@ -2536,19 +2789,23 @@ const App = () => {
 
             {/* Gráfico de Progreso de Peso */}
             {bodyMeasurements.length > 0 && (
-              <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <Scale className="text-emerald-400" />
+              <div className={`${bgCard} p-6 rounded-xl border ${borderMain}`}>
+                <h2 className={`text-xl font-bold ${textMain} mb-4 flex items-center gap-2`}>
+                  <Scale className={isDarkMode ? 'text-emerald-400' : 'text-emerald-600'} />
                   Progreso de Peso
                 </h2>
                 <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={bodyMeasurements.map(m => ({ date: m.date, weight: m.weight }))}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickFormatter={(str) => str.slice(5)} />
-                      <YAxis stroke="#94a3b8" fontSize={12} unit="kg" />
+                      <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? "#334155" : "#cbd5e1"} />
+                        <XAxis dataKey="date" stroke={isDarkMode ? "#94a3b8" : "#64748b"} fontSize={12} tickFormatter={(str) => str.slice(5)} />
+                      <YAxis stroke={isDarkMode ? "#94a3b8" : "#64748b"} fontSize={12} unit="kg" />
                         <Tooltip 
-                          contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', color: '#f1f5f9' }}
+                          contentStyle={{ 
+                            backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', 
+                            borderColor: isDarkMode ? '#1e293b' : '#e2e8f0', 
+                            color: isDarkMode ? '#f1f5f9' : '#0f172a'
+                          }}
                         formatter={(value: number) => [`${value} kg`, 'Peso']}
                         />
                       <Line type="monotone" dataKey="weight" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 5 }} />
@@ -2560,47 +2817,47 @@ const App = () => {
 
             {/* Historial de Medidas */}
             {bodyMeasurements.length > 0 && (
-              <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <Activity className="text-orange-400" />
+              <div className={`${bgCard} p-6 rounded-xl border ${borderMain}`}>
+                <h2 className={`text-xl font-bold ${textMain} mb-4 flex items-center gap-2`}>
+                  <Activity className={isDarkMode ? 'text-orange-400' : 'text-orange-600'} />
                   Historial de Medidas
                 </h2>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
                   {bodyMeasurements.slice().reverse().map((measurement) => (
-                    <div key={measurement.id} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
+                    <div key={measurement.id} className={`${bgCardHover} p-4 rounded-lg border ${borderSecondary}`}>
                       <div className="flex justify-between items-center mb-2">
-                        <div className="font-semibold text-white">{measurement.date}</div>
-                        <div className="text-lg font-bold text-emerald-400">{measurement.weight} kg</div>
+                        <div className={`font-semibold ${textMain}`}>{measurement.date}</div>
+                        <div className={`text-lg font-bold ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{measurement.weight} kg</div>
                 </div>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
                         {measurement.chest && (
                           <div>
-                            <span className="text-slate-400">Pecho:</span>
-                            <span className="text-white ml-1">{measurement.chest} cm</span>
+                            <span className={textSecondary}>Pecho:</span>
+                            <span className={`${textMain} ml-1`}>{measurement.chest} cm</span>
                           </div>
                         )}
                         {measurement.waist && (
                           <div>
-                            <span className="text-slate-400">Cintura:</span>
-                            <span className="text-white ml-1">{measurement.waist} cm</span>
+                            <span className={textSecondary}>Cintura:</span>
+                            <span className={`${textMain} ml-1`}>{measurement.waist} cm</span>
                           </div>
                         )}
                         {measurement.hips && (
                           <div>
-                            <span className="text-slate-400">Cadera:</span>
-                            <span className="text-white ml-1">{measurement.hips} cm</span>
+                            <span className={textSecondary}>Cadera:</span>
+                            <span className={`${textMain} ml-1`}>{measurement.hips} cm</span>
                           </div>
                         )}
                         {measurement.biceps && (
                           <div>
-                            <span className="text-slate-400">Bíceps:</span>
-                            <span className="text-white ml-1">{measurement.biceps} cm</span>
+                            <span className={textSecondary}>Bíceps:</span>
+                            <span className={`${textMain} ml-1`}>{measurement.biceps} cm</span>
                           </div>
                         )}
                         {measurement.thighs && (
                           <div>
-                            <span className="text-slate-400">Muslo:</span>
-                            <span className="text-white ml-1">{measurement.thighs} cm</span>
+                            <span className={textSecondary}>Muslo:</span>
+                            <span className={`${textMain} ml-1`}>{measurement.thighs} cm</span>
                           </div>
                         )}
                       </div>
@@ -2609,6 +2866,113 @@ const App = () => {
                 </div>
               </div>
             )}
+
+            {/* Botón Cerrar Sesión - Solo Móvil */}
+            {user && (
+              <div className="md:hidden">
+                <button
+                  onClick={handleSignOut}
+                  className={`w-full ${isDarkMode ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400 border-red-700/50' : 'bg-red-100 hover:bg-red-200 text-red-600 border-red-300'} border p-4 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2`}
+                >
+                  <LogOut className="w-5 h-5" />
+                  Cerrar Sesión
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Notas Rápidas */}
+        {view === 'notes' && (
+          <div className="space-y-6 pb-10 animate-in fade-in duration-300">
+            {!userId && (
+              <div className={`${isDarkMode ? 'bg-red-900/50 text-red-300 border-red-700' : 'bg-red-100 text-red-800 border-red-300'} p-3 rounded-lg mb-6 border flex items-center justify-center gap-2`}>
+                <StickyNote className="w-5 h-5" />
+                <p className="text-sm font-medium">Inicia sesión para crear y ver tus notas.</p>
+              </div>
+            )}
+
+            {/* Botón para crear nueva nota */}
+            {userId && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setEditingNote(null)
+                    setNewNote('')
+                    setNoteDate(formatDate(new Date()))
+                    setNoteColor('yellow')
+                    setShowNoteModal(true)
+                  }}
+                  className="bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 px-6 rounded-lg transition-all flex items-center gap-2"
+                >
+                  <Plus className="w-5 h-5" />
+                  Nueva Nota
+                </button>
+              </div>
+            )}
+
+            {/* Lista de Notas - Layout Masonry */}
+            <div className={`${bgCard} p-6 rounded-xl border ${borderMain}`}>
+              <h2 className={`text-xl font-bold ${textMain} mb-4 flex items-center gap-2`}>
+                <StickyNote className="text-yellow-400" />
+                Mis Notas ({quickNotes.length})
+              </h2>
+              {quickNotes.length === 0 ? (
+                <div className={`text-center py-8 ${textMuted}`}>
+                  <StickyNote className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">{userId ? 'No hay notas aún. ¡Crea tu primera nota!' : 'Inicia sesión para ver tus notas'}</p>
+                </div>
+              ) : (
+                <div 
+                  className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4 space-y-4"
+                  style={{ columnFill: 'balance' }}
+                >
+                  {quickNotes.map((note) => {
+                    const noteColorData = noteColors.find(c => c.name === (note.color || 'yellow')) || noteColors[0]
+                    return (
+                      <div
+                        key={note.id}
+                        className={`break-inside-avoid mb-4 p-4 rounded-lg border-2 transition-all cursor-pointer hover:scale-[1.02] ${
+                          isDarkMode
+                            ? `${noteColorData.darkBg} ${noteColorData.darkBorder} ${noteColorData.darkText}`
+                            : `${noteColorData.bg} ${noteColorData.border} ${noteColorData.text}`
+                        }`}
+                        onClick={() => openEditNoteModal(note)}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1 font-medium`}>
+                              {note.date}
+                            </div>
+                            <p className={`${isDarkMode ? noteColorData.darkText : noteColorData.text} whitespace-pre-wrap break-words text-sm leading-relaxed`}>
+                              {note.content}
+                            </p>
+                          </div>
+                          {userId && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                deleteQuickNote(note.id, note.date)
+                              }}
+                              className={`ml-2 p-1.5 rounded flex-shrink-0 ${isDarkMode ? 'text-red-400 hover:bg-red-900/30' : 'text-red-600 hover:bg-red-100'} transition-colors`}
+                              title="Eliminar nota"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                        {userId && (
+                          <div className="mt-2 pt-2 border-t border-opacity-30 flex items-center gap-2">
+                            <Edit2 className={`w-3 h-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`} />
+                            <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Click para editar</span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </main>
@@ -2624,23 +2988,13 @@ const App = () => {
             <Calendar size={20} />
             <span className="text-[10px]">Calendario</span>
           </button>
-          <button
-            onClick={() => {
-              if (!userId) {
-                setShowAuthModal(true)
-                return
-              }
-              setLogDate(formatDate(new Date()))
-              setView('log')
-            }}
-            className={`${isDarkMode ? 'bg-indigo-600' : 'bg-indigo-600'} text-white p-3 rounded-full -mt-8 shadow-lg ${isDarkMode ? 'shadow-indigo-900/50' : 'shadow-indigo-900/30'} border-4 ${bgMain} transition-all ${!userId ? 'opacity-50 cursor-not-allowed' : ''}`}
-            disabled={!userId}
-          >
-            <Plus size={24} />
-          </button>
           <button onClick={() => setView('stats')} className={`p-2 rounded-lg flex flex-col items-center gap-1 transition-all ${view === 'stats' ? (isDarkMode ? 'text-cyan-400' : 'text-cyan-600') : textSecondary} ${view === 'stats' ? (isDarkMode ? 'bg-cyan-500/10' : 'bg-cyan-100') : ''}`}>
             <BarChart2 size={20} />
             <span className="text-[10px]">Progreso</span>
+          </button>
+          <button onClick={() => setView('notes')} className={`p-2 rounded-lg flex flex-col items-center gap-1 transition-all ${view === 'notes' ? (isDarkMode ? 'text-cyan-400' : 'text-cyan-600') : textSecondary} ${view === 'notes' ? (isDarkMode ? 'bg-cyan-500/10' : 'bg-cyan-100') : ''}`}>
+            <StickyNote size={20} />
+            <span className="text-[10px]">Notas</span>
           </button>
           <button onClick={() => setView('profile')} className={`p-2 rounded-lg flex flex-col items-center gap-1 transition-all ${view === 'profile' ? (isDarkMode ? 'text-cyan-400' : 'text-cyan-600') : textSecondary} ${view === 'profile' ? (isDarkMode ? 'bg-cyan-500/10' : 'bg-cyan-100') : ''}`}>
             <UserCircle size={20} />
@@ -2672,6 +3026,9 @@ const App = () => {
         <button onClick={() => setView('stats')} className={`p-3 rounded-xl transition-all ${view === 'stats' ? (isDarkMode ? 'bg-cyan-500/10 text-cyan-400' : 'bg-cyan-100 text-cyan-600') : `${textSecondary} ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}`}>
           <BarChart2 size={24} />
         </button>
+        <button onClick={() => setView('notes')} className={`p-3 rounded-xl transition-all ${view === 'notes' ? (isDarkMode ? 'bg-cyan-500/10 text-cyan-400' : 'bg-cyan-100 text-cyan-600') : `${textSecondary} ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}`} title="Notas Rápidas">
+          <StickyNote size={24} />
+        </button>
         <button onClick={() => setView('profile')} className={`p-3 rounded-xl transition-all ${view === 'profile' ? (isDarkMode ? 'bg-cyan-500/10 text-cyan-400' : 'bg-cyan-100 text-cyan-600') : `${textSecondary} ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}`} title="Perfil">
           <UserCircle size={24} />
         </button>
@@ -2693,6 +3050,7 @@ const App = () => {
               title="Tomar día de descanso"
             >
               <Coffee className="w-5 h-5" />
+              <span className="md:hidden">Descanso</span>
               <span className="hidden md:inline">Descanso</span>
             </button>
           )}
@@ -2709,6 +3067,7 @@ const App = () => {
             title="Registrar Entrenamiento"
           >
             <Plus className="w-6 h-6" />
+            <span className="md:hidden">Agregar</span>
             <span className="hidden md:inline">Registrar Hoy</span>
           </button>
         </div>
