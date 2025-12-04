@@ -541,7 +541,8 @@ const App = () => {
   // Abrir modal de edición
   const openEditNoteModal = (note: QuickNote) => {
     setEditingNote(note)
-    setNewNote(note.content)
+    const content = typeof note.content === 'string' ? note.content : String(note.content || '')
+    setNewNote(content)
     setNoteDate(note.date)
     setNoteColor(note.color || 'yellow')
     setShowNoteModal(true)
@@ -557,13 +558,14 @@ const App = () => {
   }
 
   // Guardar nota rápida (crear o editar)
-  const saveQuickNote = async () => {
+  const saveQuickNote = async (content?: string) => {
     if (!db || !userId) {
       showNotification('Error: No se puede guardar la nota.', 'error')
       return
     }
 
-    if (!newNote.trim()) {
+    const noteContent = content !== undefined ? content : newNote
+    if (!noteContent.trim()) {
       showNotification('Por favor, escribe algo en la nota.', 'warning')
       return
     }
@@ -580,7 +582,7 @@ const App = () => {
       const note: QuickNote = {
         id: noteId,
         date: noteDate,
-        content: newNote.trim(),
+        content: noteContent.trim(),
         createdAt: editingNote ? editingNote.createdAt : Date.now(),
         color: noteColor
       }
@@ -1707,7 +1709,13 @@ const App = () => {
   const NoteEditModal = () => {
     if (!showNoteModal) return null
 
+    const [localNote, setLocalNote] = useState(newNote)
     const selectedColorData = noteColors.find(c => c.name === noteColor) || noteColors[0]
+
+    // Sincronizar el estado local con el estado global cuando cambia
+    useEffect(() => {
+      setLocalNote(newNote)
+    }, [showNoteModal, editingNote?.id])
 
     return (
       <div 
@@ -1781,7 +1789,7 @@ const App = () => {
               />
             </div>
 
-            {/* Textarea mejorado */}
+            {/* Textarea completamente rediseñado */}
             <div>
               <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>
                 <StickyNote className="w-4 h-4 inline mr-1" />
@@ -1789,16 +1797,18 @@ const App = () => {
               </label>
               <div className="relative">
                 <textarea
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
+                  value={localNote}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setLocalNote(val)
+                  }}
                   placeholder="Escribe tu nota, recordatorio o apunte aquí..."
                   rows={8}
                   className={`w-full ${inputBg} ${textMain} p-4 rounded-lg border ${inputBorder} focus:outline-none focus:ring-2 focus:ring-yellow-500/50 disabled:opacity-50 resize-none transition-all`}
                   disabled={!userId}
-                  autoFocus
                 />
                 <div className={`absolute bottom-2 right-2 text-xs ${textMuted}`}>
-                  {newNote.length} caracteres
+                  {localNote.length} caracteres
                 </div>
               </div>
             </div>
@@ -1808,30 +1818,45 @@ const App = () => {
               <label className={`block text-sm font-semibold ${textSecondary} mb-3`}>
                 Color de la nota
               </label>
-              <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
-                {noteColors.map((color) => (
-                  <button
-                    key={color.name}
-                    onClick={() => setNoteColor(color.name)}
-                    className={`relative p-3 rounded-xl border-2 transition-all transform hover:scale-105 ${
-                      noteColor === color.name
-                        ? isDarkMode
-                          ? `${color.darkBorder} ${color.darkBg} ring-2 ring-offset-2 ${isDarkMode ? 'ring-offset-slate-900' : 'ring-offset-white'} ring-yellow-500`
-                          : `${color.border} ${color.bg} ring-2 ring-offset-2 ring-yellow-500`
-                        : isDarkMode
-                          ? 'border-slate-700 hover:border-slate-600'
-                          : 'border-slate-300 hover:border-slate-400'
-                    }`}
-                    title={color.name}
-                  >
-                    <div className={`w-full h-10 rounded-lg ${isDarkMode ? color.darkBg : color.bg}`} />
-                    {noteColor === color.name && (
-                      <div className="absolute top-1 right-1">
-                        <Check className={`w-4 h-4 ${isDarkMode ? color.darkText : color.text}`} />
-                      </div>
-                    )}
-                  </button>
-                ))}
+              <div className="flex flex-wrap gap-2.5">
+                {noteColors.map((color) => {
+                  const colorMap: Record<string, { light: string; dark: string }> = {
+                    yellow: { light: '#fef3c7', dark: '#854d0e' },
+                    blue: { light: '#dbeafe', dark: '#1e3a8a' },
+                    green: { light: '#d1fae5', dark: '#064e3b' },
+                    purple: { light: '#e9d5ff', dark: '#581c87' },
+                    pink: { light: '#fce7f3', dark: '#831843' },
+                    orange: { light: '#fed7aa', dark: '#7c2d12' },
+                    red: { light: '#fee2e2', dark: '#7f1d1d' },
+                    cyan: { light: '#cffafe', dark: '#164e63' }
+                  }
+                  const bgColor = isDarkMode ? colorMap[color.name]?.dark : colorMap[color.name]?.light
+                  const isSelected = noteColor === color.name
+                  
+                  return (
+                    <button
+                      key={color.name}
+                      onClick={() => setNoteColor(color.name)}
+                      className={`relative w-8 h-8 rounded-full border-2 transition-all transform hover:scale-110 ${
+                        isSelected
+                          ? isDarkMode
+                            ? 'ring-2 ring-offset-2 ring-offset-slate-900 ring-yellow-500 border-yellow-500'
+                            : 'ring-2 ring-offset-2 ring-offset-white ring-yellow-500 border-yellow-400'
+                          : isDarkMode
+                            ? 'border-slate-700 hover:border-slate-600'
+                            : 'border-slate-300 hover:border-slate-400'
+                      }`}
+                      title={color.name}
+                      style={{ backgroundColor: bgColor || '#dbeafe' }}
+                    >
+                      {isSelected && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Check className={`w-4 h-4 ${isDarkMode ? 'text-yellow-200' : 'text-yellow-800'}`} strokeWidth={3} />
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -1846,8 +1871,8 @@ const App = () => {
                 Cancelar
               </button>
               <button
-                onClick={saveQuickNote}
-                disabled={!userId || !newNote.trim()}
+                onClick={() => saveQuickNote(localNote)}
+                disabled={!userId || !localNote.trim()}
                 className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
                   isDarkMode 
                     ? 'bg-yellow-600 hover:bg-yellow-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
