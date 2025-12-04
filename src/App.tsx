@@ -62,9 +62,40 @@ const FIREBASE_CONFIG = {
 
 const APP_ID = FIREBASE_CONFIG.appId
 
+// Zona horaria de Bogotá, Colombia
+const BOGOTA_TIMEZONE = 'America/Bogota'
+
+// Obtener fecha en formato YYYY-MM-DD usando zona horaria de Bogotá
+const formatDate = (date: Date): string => {
+  // Convertir la fecha a la zona horaria de Bogotá
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BOGOTA_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+  return formatter.format(date)
+}
+
+// Obtener fecha de hoy en Bogotá
+const getTodayBogota = (): Date => {
+  const now = new Date()
+  // Crear una fecha usando la hora local de Bogotá
+  const bogotaString = now.toLocaleString('en-US', { 
+    timeZone: BOGOTA_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  return new Date(bogotaString)
+}
+
 const getDaysInMonth = (year: number, month: number): number => new Date(year, month + 1, 0).getDate()
 const getFirstDayOfMonth = (year: number, month: number): number => new Date(year, month, 1).getDay()
-const formatDate = (date: Date): string => date.toISOString().split('T')[0]
 
 const DEFAULT_SPLIT: Record<string, string[]> = {
   'Pecho y Espalda': ['Press Banca', 'Remo con Barra', 'Press Inclinado', 'Dominadas', 'Aperturas', 'Pull Over'],
@@ -75,8 +106,8 @@ const DEFAULT_SPLIT: Record<string, string[]> = {
 const App = () => {
   const [view, setView] = useState<'dashboard' | 'calendar' | 'log' | 'stats' | 'profile' | 'notes'>('dashboard')
   const [workouts, setWorkouts] = useState<Workout[]>([])
-  const [selectedDate, setSelectedDate] = useState(new Date())
-  const [logDate, setLogDate] = useState(formatDate(new Date()))
+  const [selectedDate, setSelectedDate] = useState(getTodayBogota())
+  const [logDate, setLogDate] = useState(formatDate(getTodayBogota()))
   const [selectedSplit, setSelectedSplit] = useState('Pecho y Espalda')
   const [currentExercises, setCurrentExercises] = useState<Exercise[]>([])
   
@@ -98,7 +129,7 @@ const App = () => {
   // Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [bodyMeasurements, setBodyMeasurements] = useState<BodyMeasurement[]>([])
-  const [measurementDate, setMeasurementDate] = useState(formatDate(new Date()))
+  const [measurementDate, setMeasurementDate] = useState(formatDate(getTodayBogota()))
   const [newMeasurement, setNewMeasurement] = useState<{
     weight: string
     chest: string
@@ -134,7 +165,7 @@ const App = () => {
   // Quick Notes State
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([])
   const [newNote, setNewNote] = useState('')
-  const [noteDate, setNoteDate] = useState(formatDate(new Date()))
+  const [noteDate, setNoteDate] = useState(formatDate(getTodayBogota()))
   const [noteColor, setNoteColor] = useState('yellow')
   const [editingNote, setEditingNote] = useState<QuickNote | null>(null)
   const [showNoteModal, setShowNoteModal] = useState(false)
@@ -476,7 +507,7 @@ const App = () => {
     setShowNoteModal(false)
     setEditingNote(null)
     setNewNote('')
-    setNoteDate(formatDate(new Date()))
+    setNoteDate(formatDate(getTodayBogota()))
     setNoteColor('yellow')
   }
 
@@ -493,7 +524,7 @@ const App = () => {
     }
 
     // Validar que la fecha no sea futura
-    const today = formatDate(new Date())
+    const today = formatDate(getTodayBogota())
     if (noteDate > today) {
       showNotification('No puedes crear notas para fechas futuras.', 'warning')
       return
@@ -545,8 +576,8 @@ const App = () => {
       return
     }
 
-    const today = formatDate(new Date())
-    const todayDate = new Date()
+    const today = formatDate(getTodayBogota())
+    const todayDate = getTodayBogota()
     
     // Validar que no sea domingo
     if (todayDate.getDay() === 0) {
@@ -713,7 +744,7 @@ const App = () => {
     }
 
     // Validar que la fecha no sea futura
-    const today = formatDate(new Date())
+    const today = formatDate(getTodayBogota())
     if (logDate > today) {
       showNotification('No puedes registrar entrenamientos en el futuro. Solo hasta el día de hoy.', 'warning')
       return
@@ -860,9 +891,10 @@ const App = () => {
     'El éxito es la suma de pequeños esfuerzos repetidos día tras día.'
   ]
 
-  // Obtener saludo según hora del día
+  // Obtener saludo según hora del día (Bogotá)
   const getGreeting = (): string => {
-    const hour = new Date().getHours()
+    const bogotaDate = getTodayBogota()
+    const hour = bogotaDate.getHours()
     if (hour >= 5 && hour < 12) return 'Buenos días'
     if (hour >= 12 && hour < 19) return 'Buenas tardes'
     return 'Buenas noches'
@@ -870,7 +902,7 @@ const App = () => {
 
   // Mensaje motivador aleatorio (basado en fecha para que cambie diariamente)
   const getMotivationalMessage = (): string => {
-    const today = new Date()
+    const today = getTodayBogota()
     const dayOfYear = Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / 86400000)
     return motivationalMessages[dayOfYear % motivationalMessages.length]
   }
@@ -919,11 +951,11 @@ const App = () => {
     const uniqueDates = new Set(workoutDates)
     
     // % de Asistencia (últimos 30 días)
-    const today = new Date()
+    const today = getTodayBogota()
     const thirtyDaysAgo = new Date(today)
     thirtyDaysAgo.setDate(today.getDate() - 30)
     const workoutsLast30Days = sortedWorkouts.filter(w => {
-      const workoutDate = new Date(w.date)
+      const workoutDate = new Date(w.date + 'T00:00:00')
       return workoutDate >= thirtyDaysAgo && workoutDate <= today
     })
     const uniqueDatesLast30 = new Set(workoutsLast30Days.map(w => w.date))
@@ -931,8 +963,8 @@ const App = () => {
 
     // Racha actual (días consecutivos) - Los domingos y días de descanso no cuentan
     let currentStreak = 0
-    const todayStr = formatDate(today)
-    let checkDate = new Date(today)
+    const todayStr = formatDate(getTodayBogota())
+    let checkDate = new Date(getTodayBogota())
     
     // Si hay entrenamiento o descanso hoy, empieza desde hoy, sino desde ayer
     const hasTodayWorkout = uniqueDates.has(todayStr)
@@ -1071,12 +1103,12 @@ const App = () => {
     twoWeeksAgo.setDate(today.getDate() - 14)
 
     const thisWeekWorkouts = sortedWorkouts.filter(w => {
-      const workoutDate = new Date(w.date)
+      const workoutDate = new Date(w.date + 'T00:00:00')
       return workoutDate >= oneWeekAgo && workoutDate <= today
     })
 
     const lastWeekWorkouts = sortedWorkouts.filter(w => {
-      const workoutDate = new Date(w.date)
+      const workoutDate = new Date(w.date + 'T00:00:00')
       return workoutDate >= twoWeeksAgo && workoutDate < oneWeekAgo
     })
 
@@ -1100,7 +1132,7 @@ const App = () => {
 
     // Promedio de entrenamientos por semana (corregido)
     const daysDiff = sortedWorkouts.length > 0 
-      ? Math.max(1, Math.floor((today.getTime() - new Date(sortedWorkouts[0].date).getTime()) / (1000 * 60 * 60 * 24)))
+      ? Math.max(1, Math.floor((today.getTime() - new Date(sortedWorkouts[0].date + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)))
       : 1
     const weeks = daysDiff / 7
     const avgWorkoutsPerWeek = weeks > 0 ? parseFloat((workouts.length / weeks).toFixed(1)) : workouts.length
@@ -1224,19 +1256,19 @@ const App = () => {
     const sortedWorkouts = [...workouts].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     
     // Comparar últimos 30 días vs anteriores 30 días
-    const today = new Date()
+    const today = getTodayBogota()
     const thirtyDaysAgo = new Date(today)
     thirtyDaysAgo.setDate(today.getDate() - 30)
     const sixtyDaysAgo = new Date(today)
     sixtyDaysAgo.setDate(today.getDate() - 60)
 
     const recentWorkouts = sortedWorkouts.filter(w => {
-      const workoutDate = new Date(w.date)
+      const workoutDate = new Date(w.date + 'T00:00:00')
       return workoutDate >= thirtyDaysAgo && workoutDate <= today
     })
     
     const olderWorkouts = sortedWorkouts.filter(w => {
-      const workoutDate = new Date(w.date)
+      const workoutDate = new Date(w.date + 'T00:00:00')
       return workoutDate >= sixtyDaysAgo && workoutDate < thirtyDaysAgo
     })
 
@@ -1511,17 +1543,17 @@ const App = () => {
               <input
                 type="date"
                 value={noteDate}
-                max={formatDate(new Date())}
-                onChange={(e) => {
-                  const selectedDate = e.target.value
-                  const today = formatDate(new Date())
-                  if (selectedDate > today) {
-                    setNoteDate(today)
-                    showNotification('No puedes crear notas para fechas futuras.', 'warning')
-                    return
-                  }
-                  setNoteDate(selectedDate)
-                }}
+                  max={formatDate(getTodayBogota())}
+                  onChange={(e) => {
+                    const selectedDate = e.target.value
+                    const today = formatDate(getTodayBogota())
+                    if (selectedDate > today) {
+                      setNoteDate(today)
+                      showNotification('No puedes crear notas para fechas futuras.', 'warning')
+                      return
+                    }
+                    setNoteDate(selectedDate)
+                  }}
                 className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-yellow-500 disabled:opacity-50`}
                 disabled={!userId}
               />
@@ -1598,7 +1630,7 @@ const App = () => {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const currentDayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-      const todayString = formatDate(new Date())
+      const todayString = formatDate(getTodayBogota())
       const isFutureDate = currentDayString > todayString
 
       const workoutOnDay = workouts.find(w => w.date === currentDayString)
@@ -2003,10 +2035,10 @@ const App = () => {
                 <input 
                   type="date" 
                   value={logDate} 
-                  max={formatDate(new Date())}
+                  max={formatDate(getTodayBogota())}
                   onChange={(e) => {
                     const selectedDate = e.target.value
-                    const today = formatDate(new Date())
+                    const today = formatDate(getTodayBogota())
                     if (selectedDate > today) {
                       setLogDate(today) // Resetear a hoy si intenta seleccionar futuro
                       return
@@ -2899,7 +2931,7 @@ const App = () => {
                   onClick={() => {
                     setEditingNote(null)
                     setNewNote('')
-                    setNoteDate(formatDate(new Date()))
+                    setNoteDate(formatDate(getTodayBogota()))
                     setNoteColor('yellow')
                     setShowNoteModal(true)
                   }}
@@ -3060,7 +3092,7 @@ const App = () => {
                 setShowAuthModal(true)
                 return
               }
-              setLogDate(formatDate(new Date()))
+              setLogDate(formatDate(getTodayBogota()))
               setView('log')
             }}
             className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 px-6 rounded-full shadow-lg shadow-indigo-900/50 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-2"
