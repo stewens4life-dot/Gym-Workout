@@ -103,6 +103,11 @@ const DEFAULT_SPLIT: Record<string, string[]> = {
   'Pierna': ['Sentadilla', 'Peso Muerto Rumano', 'Prensa', 'Extensiones de Cuádriceps', 'Curl Femoral', 'Pantorrillas']
 }
 
+const AVAILABLE_MUSCLES = [
+  'Pecho', 'Espalda', 'Hombros', 'Bíceps', 'Tríceps', 'Antebrazos',
+  'Cuádriceps', 'Femorales', 'Glúteos', 'Pantorrillas', 'Abdominales', 'Trapecio'
+]
+
 const App = () => {
   const [view, setView] = useState<'dashboard' | 'calendar' | 'log' | 'stats' | 'profile' | 'notes'>('dashboard')
   const [workouts, setWorkouts] = useState<Workout[]>([])
@@ -148,9 +153,12 @@ const App = () => {
 
   // Custom Splits State
   const [customSplits, setCustomSplits] = useState<Record<string, string[]>>(DEFAULT_SPLIT)
+  const [splitColors, setSplitColors] = useState<Record<string, string>>({})
+  const [splitMuscles, setSplitMuscles] = useState<Record<string, string[]>>({})
   const [editingSplit, setEditingSplit] = useState<string | null>(null)
   const [editingSplitName, setEditingSplitName] = useState('')
   const [showSplitEditor, setShowSplitEditor] = useState(false)
+  const [splitToDelete, setSplitToDelete] = useState<string | null>(null)
   
   // Activity State
   const [showAllActivity, setShowAllActivity] = useState(false)
@@ -161,6 +169,7 @@ const App = () => {
   // Delete Confirmation Modal
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [workoutToDelete, setWorkoutToDelete] = useState<string | null>(null)
+  const [deleteModalType, setDeleteModalType] = useState<'workout' | 'split'>('workout')
   
   // Quick Notes State
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([])
@@ -331,7 +340,7 @@ const App = () => {
     return unsubscribe
   }, [isAuthReady, db, userId])
 
-  // Cargar splits personalizados
+  // Cargar splits personalizados y colores
   useEffect(() => {
     if (!isAuthReady || !db || !userId) {
       setCustomSplits(DEFAULT_SPLIT)
@@ -339,9 +348,45 @@ const App = () => {
     }
 
     const splitsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splits')
-    getDoc(splitsRef).then((docSnap) => {
-      if (docSnap.exists()) {
-        setCustomSplits(docSnap.data() as Record<string, string[]>)
+    const colorsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitColors')
+    const musclesRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitMuscles')
+    
+    Promise.all([getDoc(splitsRef), getDoc(colorsRef), getDoc(musclesRef)]).then(([splitsSnap, colorsSnap, musclesSnap]) => {
+      if (splitsSnap.exists()) {
+        const loadedSplits = splitsSnap.data() as Record<string, string[]>
+        setCustomSplits(loadedSplits)
+        
+        // Cargar músculos
+        if (musclesSnap.exists()) {
+          setSplitMuscles(musclesSnap.data() as Record<string, string[]>)
+        } else {
+          // Inicializar músculos por defecto basados en nombres de splits
+          const defaultMuscles: Record<string, string[]> = {}
+          Object.keys(loadedSplits).forEach(split => {
+            if (split.includes('Pecho')) defaultMuscles[split] = ['Pecho', 'Espalda']
+            else if (split.includes('Hombro')) defaultMuscles[split] = ['Hombros', 'Bíceps', 'Tríceps']
+            else if (split.includes('Pierna')) defaultMuscles[split] = ['Cuádriceps', 'Femorales', 'Glúteos', 'Pantorrillas']
+            else defaultMuscles[split] = []
+          })
+          setSplitMuscles(defaultMuscles)
+          setDoc(musclesRef, defaultMuscles, { merge: true }).catch(console.error)
+        }
+        
+        // Cargar colores o generar nuevos
+        if (colorsSnap.exists()) {
+          setSplitColors(colorsSnap.data() as Record<string, string>)
+        } else {
+          // Generar colores para splits sin color asignado
+          const newColors: Record<string, string> = {}
+          Object.keys(loadedSplits).forEach((split, index) => {
+            if (!newColors[split]) {
+              newColors[split] = generateSplitColor(split, index)
+            }
+          })
+          setSplitColors(newColors)
+          // Guardar colores generados
+          setDoc(colorsRef, newColors, { merge: true }).catch(console.error)
+        }
       }
     }).catch((error) => {
       console.error('Error loading custom splits', error)
@@ -625,6 +670,31 @@ const App = () => {
     return { label: 'Obesidad', color: 'text-red-400' }
   }
 
+  // Generar color para split
+  const generateSplitColor = (splitName: string, index: number): string => {
+    const defaultColors = ['blue', 'purple', 'red', 'green', 'orange', 'cyan', 'pink', 'indigo', 'amber', 'teal']
+    if (splitColors[splitName]) return splitColors[splitName]
+    return defaultColors[index % defaultColors.length]
+  }
+
+  // Obtener clases de color para split
+  const getSplitColorClasses = (colorName: string, isDark: boolean): { bg: string; border: string; text: string } => {
+    const colorMap: Record<string, { dark: { bg: string; border: string; text: string }; light: { bg: string; border: string; text: string } }> = {
+      blue: { dark: { bg: 'bg-blue-900/80', border: 'border-blue-500', text: 'text-white' }, light: { bg: 'bg-blue-200', border: 'border-blue-400', text: 'text-blue-800' } },
+      purple: { dark: { bg: 'bg-purple-900/80', border: 'border-purple-500', text: 'text-white' }, light: { bg: 'bg-purple-200', border: 'border-purple-400', text: 'text-purple-800' } },
+      red: { dark: { bg: 'bg-red-900/80', border: 'border-red-500', text: 'text-white' }, light: { bg: 'bg-red-200', border: 'border-red-400', text: 'text-red-800' } },
+      green: { dark: { bg: 'bg-green-900/80', border: 'border-green-500', text: 'text-white' }, light: { bg: 'bg-green-200', border: 'border-green-400', text: 'text-green-800' } },
+      orange: { dark: { bg: 'bg-orange-900/80', border: 'border-orange-500', text: 'text-white' }, light: { bg: 'bg-orange-200', border: 'border-orange-400', text: 'text-orange-800' } },
+      cyan: { dark: { bg: 'bg-cyan-900/80', border: 'border-cyan-500', text: 'text-white' }, light: { bg: 'bg-cyan-200', border: 'border-cyan-400', text: 'text-cyan-800' } },
+      pink: { dark: { bg: 'bg-pink-900/80', border: 'border-pink-500', text: 'text-white' }, light: { bg: 'bg-pink-200', border: 'border-pink-400', text: 'text-pink-800' } },
+      indigo: { dark: { bg: 'bg-indigo-900/80', border: 'border-indigo-500', text: 'text-white' }, light: { bg: 'bg-indigo-200', border: 'border-indigo-400', text: 'text-indigo-800' } },
+      amber: { dark: { bg: 'bg-amber-900/80', border: 'border-amber-500', text: 'text-white' }, light: { bg: 'bg-amber-200', border: 'border-amber-400', text: 'text-amber-800' } },
+      teal: { dark: { bg: 'bg-teal-900/80', border: 'border-teal-500', text: 'text-white' }, light: { bg: 'bg-teal-200', border: 'border-teal-400', text: 'text-teal-800' } },
+    }
+    const color = colorMap[colorName] || colorMap.blue
+    return isDark ? color.dark : color.light
+  }
+
   // Guardar splits personalizados
   const saveCustomSplits = async () => {
     if (!db || !userId) {
@@ -635,6 +705,15 @@ const App = () => {
     try {
       const splitsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splits')
       await setDoc(splitsRef, customSplits, { merge: true })
+      
+      // Guardar colores de splits
+      const colorsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitColors')
+      await setDoc(colorsRef, splitColors, { merge: true })
+      
+      // Guardar músculos de splits
+      const musclesRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitMuscles')
+      await setDoc(musclesRef, splitMuscles, { merge: true })
+      
       showNotification('Splits personalizados guardados exitosamente', 'success')
       setShowSplitEditor(false)
     } catch (error) {
@@ -643,8 +722,18 @@ const App = () => {
     }
   }
 
+  // Toggle músculo en split
+  const toggleMuscleInSplit = (splitName: string, muscle: string) => {
+    const currentMuscles = splitMuscles[splitName] || []
+    const newMuscles = currentMuscles.includes(muscle)
+      ? currentMuscles.filter(m => m !== muscle)
+      : [...currentMuscles, muscle]
+    
+    setSplitMuscles({ ...splitMuscles, [splitName]: newMuscles })
+  }
+
   // Editar nombre de split
-  const updateSplitName = (oldName: string, newName: string) => {
+  const updateSplitName = async (oldName: string, newName: string) => {
     if (!newName.trim()) {
       showNotification('El nombre del split no puede estar vacío', 'warning')
       return
@@ -659,17 +748,83 @@ const App = () => {
     newSplits[newName] = newSplits[oldName]
     delete newSplits[oldName]
     
+    // Actualizar colores
+    const newColors = { ...splitColors }
+    if (newColors[oldName]) {
+      newColors[newName] = newColors[oldName]
+      delete newColors[oldName]
+    }
+    
     // Actualizar workouts existentes con el nuevo nombre
     setWorkouts(workouts.map(w => 
       w.split === oldName ? { ...w, split: newName } : w
     ))
     
     setCustomSplits(newSplits)
+    setSplitColors(newColors)
     setEditingSplit(null)
     
     if (selectedSplit === oldName) {
       setSelectedSplit(newName)
     }
+
+    // Guardar inmediatamente
+    if (db && userId) {
+      try {
+        const splitsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splits')
+        await setDoc(splitsRef, newSplits, { merge: true })
+        const colorsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitColors')
+        await setDoc(colorsRef, newColors, { merge: true })
+      } catch (error) {
+        console.error('Error saving split name', error)
+      }
+    }
+  }
+
+  // Eliminar split
+  const deleteSplit = async () => {
+    if (!splitToDelete) return
+    
+    if (Object.keys(customSplits).length <= 1) {
+      showNotification('Debes tener al menos un split', 'warning')
+      setShowDeleteModal(false)
+      setSplitToDelete(null)
+      return
+    }
+
+    const newSplits = { ...customSplits }
+    delete newSplits[splitToDelete]
+    const newColors = { ...splitColors }
+    delete newColors[splitToDelete]
+    const newMuscles = { ...splitMuscles }
+    delete newMuscles[splitToDelete]
+    
+    setCustomSplits(newSplits)
+    setSplitColors(newColors)
+    setSplitMuscles(newMuscles)
+    
+    if (selectedSplit === splitToDelete) {
+      setSelectedSplit(Object.keys(newSplits)[0])
+    }
+
+    // Guardar inmediatamente
+    if (db && userId) {
+      try {
+        const splitsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splits')
+        await setDoc(splitsRef, newSplits, { merge: true })
+        const colorsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitColors')
+        await setDoc(colorsRef, newColors, { merge: true })
+        const musclesRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitMuscles')
+        await setDoc(musclesRef, newMuscles, { merge: true })
+        showNotification('Split eliminado exitosamente', 'success')
+      } catch (error) {
+        console.error('Error deleting split', error)
+        showNotification('Error al eliminar el split', 'error')
+      }
+    }
+    
+    setShowDeleteModal(false)
+    setSplitToDelete(null)
   }
 
   // Agregar ejercicio a un split
@@ -697,6 +852,29 @@ const App = () => {
       setCustomSplits(newSplits)
     }
   }
+
+  // Obtener ejercicios más usados según grupo muscular/split
+  const getMostUsedExercises = useMemo(() => {
+    if (!userId || workouts.length === 0) return []
+    
+    const exerciseCounts: Record<string, number> = {}
+    
+    // Contar ejercicios usados en el split seleccionado
+    workouts.forEach(workout => {
+      if (workout.split === selectedSplit && !workout.isRestDay) {
+        workout.exercises.forEach(ex => {
+          exerciseCounts[ex.name] = (exerciseCounts[ex.name] || 0) + 1
+        })
+      }
+    })
+    
+    // Ordenar por frecuencia y devolver los más usados
+    return Object.entries(exerciseCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name]) => name)
+  }, [userId, workouts, selectedSplit])
+
 
   const handleAddExercise = (exerciseName: string) => {
     if (!userId) {
@@ -1484,6 +1662,12 @@ const App = () => {
   const DeleteConfirmationModal = () => {
     if (!showDeleteModal) return null
 
+    const isSplit = deleteModalType === 'split'
+    const title = isSplit ? 'Eliminar Split' : 'Eliminar Entrenamiento'
+    const message = isSplit 
+      ? `¿Estás seguro de que quieres eliminar el split "${splitToDelete}"? Esta acción no se puede deshacer.`
+      : '¿Estás seguro de que quieres eliminar este entrenamiento? Podrás registrarlo nuevamente o marcarlo como descanso.'
+
     return (
       <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div className={`${bgCard} border ${borderSecondary} rounded-xl p-6 max-w-sm w-full shadow-2xl`}>
@@ -1491,23 +1675,25 @@ const App = () => {
             <div className={`p-3 rounded-full ${isDarkMode ? 'bg-red-900/30' : 'bg-red-100'}`}>
               <Trash2 className={`w-6 h-6 ${isDarkMode ? 'text-red-400' : 'text-red-600'}`} />
             </div>
-            <h2 className={`text-xl font-bold ${textMain}`}>Eliminar Entrenamiento</h2>
+            <h2 className={`text-xl font-bold ${textMain}`}>{title}</h2>
           </div>
           <p className={`${textSecondary} mb-6`}>
-            ¿Estás seguro de que quieres eliminar este entrenamiento? Podrás registrarlo nuevamente o marcarlo como descanso.
+            {message}
           </p>
           <div className="flex gap-3">
             <button
               onClick={() => {
                 setShowDeleteModal(false)
                 setWorkoutToDelete(null)
+                setSplitToDelete(null)
+                setDeleteModalType('workout')
               }}
               className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-900'}`}
             >
               Cancelar
             </button>
             <button
-              onClick={deleteWorkout}
+              onClick={isSplit ? deleteSplit : deleteWorkout}
               className="flex-1 py-2 px-4 rounded-lg font-medium bg-red-600 hover:bg-red-500 text-white transition-colors"
             >
               Eliminar
@@ -1521,96 +1707,154 @@ const App = () => {
   const NoteEditModal = () => {
     if (!showNoteModal) return null
 
+    const selectedColorData = noteColors.find(c => c.name === noteColor) || noteColors[0]
+
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-        <div className={`${bgCard} border ${borderSecondary} rounded-xl p-6 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto`}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className={`text-xl font-bold ${textMain} flex items-center gap-2`}>
-              <StickyNote className="text-yellow-400" />
-              {editingNote ? 'Editar Nota' : 'Nueva Nota'}
-            </h2>
-            <button
-              onClick={closeNoteModal}
-              className={`p-2 rounded-lg ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-200'} transition-colors ${textSecondary}`}
-            >
-              <X className="w-5 h-5" />
-            </button>
+      <div 
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ 
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)'
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) closeNoteModal()
+        }}
+      >
+        <div 
+          className={`${bgCard} border-2 ${isDarkMode ? selectedColorData.darkBorder : selectedColorData.border} rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden`}
+          style={{
+            boxShadow: isDarkMode 
+              ? `0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px ${selectedColorData.darkBorder}`
+              : `0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 0 0 1px ${selectedColorData.border}`
+          }}
+        >
+          {/* Header con color */}
+          <div className={`${isDarkMode ? selectedColorData.darkBg : selectedColorData.bg} px-6 py-4 border-b ${isDarkMode ? selectedColorData.darkBorder : selectedColorData.border}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${isDarkMode ? 'bg-black/20' : 'bg-white/50'}`}>
+                  <StickyNote className={`w-6 h-6 ${isDarkMode ? selectedColorData.darkText : selectedColorData.text}`} />
+                </div>
+                <div>
+                  <h2 className={`text-xl font-bold ${isDarkMode ? selectedColorData.darkText : selectedColorData.text}`}>
+                    {editingNote ? 'Editar Nota' : 'Nueva Nota'}
+                  </h2>
+                  <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mt-0.5`}>
+                    {editingNote ? 'Modifica tu nota' : 'Crea una nueva nota rápida'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeNoteModal}
+                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-black/20 text-slate-300' : 'hover:bg-white/50 text-slate-600'}`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-4">
+          {/* Contenido */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            {/* Fecha */}
             <div>
-              <label className={`block text-sm ${textSecondary} mb-2`}>Fecha</label>
+              <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>
+                <Calendar className="w-4 h-4 inline mr-1" />
+                Fecha
+              </label>
               <input
                 type="date"
                 value={noteDate}
-                  max={formatDate(getTodayBogota())}
-                  onChange={(e) => {
-                    const selectedDate = e.target.value
-                    const today = formatDate(getTodayBogota())
-                    if (selectedDate > today) {
-                      setNoteDate(today)
-                      showNotification('No puedes crear notas para fechas futuras.', 'warning')
-                      return
-                    }
-                    setNoteDate(selectedDate)
-                  }}
-                className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-yellow-500 disabled:opacity-50`}
+                max={formatDate(getTodayBogota())}
+                onChange={(e) => {
+                  const selectedDate = e.target.value
+                  const today = formatDate(getTodayBogota())
+                  if (selectedDate > today) {
+                    setNoteDate(today)
+                    showNotification('No puedes crear notas para fechas futuras.', 'warning')
+                    return
+                  }
+                  setNoteDate(selectedDate)
+                }}
+                className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:ring-2 focus:ring-yellow-500/50 disabled:opacity-50 transition-all`}
                 disabled={!userId}
               />
             </div>
 
+            {/* Textarea mejorado */}
             <div>
-              <label className={`block text-sm ${textSecondary} mb-2`}>Contenido</label>
-              <textarea
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Escribe tu nota, recordatorio o apunte aquí..."
-                rows={6}
-                className={`w-full ${inputBg} ${textMain} p-3 rounded-lg border ${inputBorder} focus:outline-none focus:border-yellow-500 disabled:opacity-50 resize-none`}
-                disabled={!userId}
-              />
+              <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>
+                <StickyNote className="w-4 h-4 inline mr-1" />
+                Contenido
+              </label>
+              <div className="relative">
+                <textarea
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Escribe tu nota, recordatorio o apunte aquí..."
+                  rows={8}
+                  className={`w-full ${inputBg} ${textMain} p-4 rounded-lg border ${inputBorder} focus:outline-none focus:ring-2 focus:ring-yellow-500/50 disabled:opacity-50 resize-none transition-all`}
+                  disabled={!userId}
+                  autoFocus
+                />
+                <div className={`absolute bottom-2 right-2 text-xs ${textMuted}`}>
+                  {newNote.length} caracteres
+                </div>
+              </div>
             </div>
 
+            {/* Selector de color mejorado */}
             <div>
-              <label className={`block text-sm ${textSecondary} mb-3`}>Color</label>
-              <div className="grid grid-cols-4 gap-2">
+              <label className={`block text-sm font-semibold ${textSecondary} mb-3`}>
+                Color de la nota
+              </label>
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
                 {noteColors.map((color) => (
                   <button
                     key={color.name}
                     onClick={() => setNoteColor(color.name)}
-                    className={`p-3 rounded-lg border-2 transition-all ${
+                    className={`relative p-3 rounded-xl border-2 transition-all transform hover:scale-105 ${
                       noteColor === color.name
                         ? isDarkMode
-                          ? `${color.darkBorder} ${color.darkBg} border-2`
-                          : `${color.border} ${color.bg} border-2`
+                          ? `${color.darkBorder} ${color.darkBg} ring-2 ring-offset-2 ${isDarkMode ? 'ring-offset-slate-900' : 'ring-offset-white'} ring-yellow-500`
+                          : `${color.border} ${color.bg} ring-2 ring-offset-2 ring-yellow-500`
                         : isDarkMode
-                        ? 'border-slate-700 hover:border-slate-600'
-                        : 'border-slate-300 hover:border-slate-400'
+                          ? 'border-slate-700 hover:border-slate-600'
+                          : 'border-slate-300 hover:border-slate-400'
                     }`}
+                    title={color.name}
                   >
-                    <div
-                      className={`w-full h-8 rounded ${
-                        isDarkMode ? color.darkBg : color.bg
-                      }`}
-                    />
+                    <div className={`w-full h-10 rounded-lg ${isDarkMode ? color.darkBg : color.bg}`} />
+                    {noteColor === color.name && (
+                      <div className="absolute top-1 right-1">
+                        <Check className={`w-4 h-4 ${isDarkMode ? color.darkText : color.text}`} />
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
             </div>
+          </div>
 
-            <div className="flex gap-3 pt-2">
+          {/* Footer con botones */}
+          <div className={`px-6 py-4 border-t ${borderMain} ${isDarkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
+            <div className="flex gap-3">
               <button
                 onClick={closeNoteModal}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-900'}`}
+                className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${isDarkMode ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-900'}`}
               >
                 Cancelar
               </button>
               <button
                 onClick={saveQuickNote}
                 disabled={!userId || !newNote.trim()}
-                className="flex-1 py-2 px-4 rounded-lg font-medium bg-yellow-600 hover:bg-yellow-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
+                  isDarkMode 
+                    ? 'bg-yellow-600 hover:bg-yellow-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                    : 'bg-yellow-500 hover:bg-yellow-600 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                } shadow-lg`}
               >
-                {editingNote ? 'Actualizar' : 'Guardar'}
+                {editingNote ? 'Actualizar Nota' : 'Guardar Nota'}
               </button>
             </div>
           </div>
@@ -1626,7 +1870,7 @@ const App = () => {
     const firstDay = getFirstDayOfMonth(year, month)
     const days: React.ReactElement[] = []
 
-    for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="h-16 w-16 md:h-20 md:w-20" />)
+    for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="h-10 w-10 sm:h-12 sm:w-12 md:h-16 md:w-16" />)
 
     for (let day = 1; day <= daysInMonth; day++) {
       const currentDayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
@@ -1643,18 +1887,11 @@ const App = () => {
           bgClass = isDarkMode 
             ? 'bg-emerald-900/50 border border-emerald-500 text-emerald-200 font-bold' 
             : 'bg-emerald-200 border border-emerald-400 text-emerald-800 font-bold'
-        } else if (workoutOnDay.split.includes('Pierna')) {
-          bgClass = isDarkMode 
-            ? 'bg-red-900/80 border border-red-500 text-white font-bold' 
-            : 'bg-red-200 border border-red-400 text-red-800 font-bold'
-        } else if (workoutOnDay.split.includes('Pecho')) {
-          bgClass = isDarkMode 
-            ? 'bg-blue-900/80 border border-blue-500 text-white font-bold' 
-            : 'bg-blue-200 border border-blue-400 text-blue-800 font-bold'
         } else {
-          bgClass = isDarkMode 
-            ? 'bg-purple-900/80 border border-purple-500 text-white font-bold' 
-            : 'bg-purple-200 border border-purple-400 text-purple-800 font-bold'
+          const splitIndex = Object.keys(customSplits).indexOf(workoutOnDay.split)
+          const splitColor = generateSplitColor(workoutOnDay.split, splitIndex)
+          const colorClasses = getSplitColorClasses(splitColor, isDarkMode)
+          bgClass = `${colorClasses.bg} border ${colorClasses.border} ${colorClasses.text} font-bold`
         }
       }
 
@@ -1673,7 +1910,7 @@ const App = () => {
             setLogDate(currentDayString)
             setView('log')
           }}
-          className={`h-16 w-16 md:h-20 md:w-20 rounded-lg flex items-center justify-center text-base md:text-lg font-medium transition-all ${bgClass} ${isFutureDate ? 'opacity-40 cursor-not-allowed' : ''}`}
+          className={`h-10 w-10 sm:h-12 sm:w-12 md:h-16 md:w-16 rounded-lg flex items-center justify-center text-xs sm:text-sm md:text-base font-medium transition-all ${bgClass} ${isFutureDate ? 'opacity-40 cursor-not-allowed' : ''}`}
           disabled={isFutureDate}
         >
           {day}
@@ -1996,22 +2233,20 @@ const App = () => {
               {renderCalendar()}
             </div>
 
-            <div className={`mt-6 flex flex-wrap gap-4 text-xs justify-center ${textSecondary}`}>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-blue-900 border border-blue-500 rounded"></div>
-                Pecho/Espalda
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-purple-900 border border-purple-500 rounded"></div>
-                Hombro/Brazos
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-red-900 border border-red-500 rounded"></div>
-                Pierna
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-emerald-900 border border-emerald-500 rounded"></div>
-                Descanso
+            <div className={`mt-6 flex flex-wrap gap-3 text-xs justify-center ${textSecondary}`}>
+              {Object.keys(customSplits).map((split, index) => {
+                const splitColor = generateSplitColor(split, index)
+                const colorClasses = getSplitColorClasses(splitColor, isDarkMode)
+                return (
+                  <div key={split} className="flex items-center gap-1.5">
+                    <div className={`w-3 h-3 ${colorClasses.bg} border ${colorClasses.border} rounded`}></div>
+                    <span className="text-xs">{split}</span>
+                  </div>
+                )
+              })}
+              <div className="flex items-center gap-1.5">
+                <div className={`w-3 h-3 ${isDarkMode ? 'bg-emerald-900/50 border-emerald-500' : 'bg-emerald-200 border-emerald-400'} border rounded`}></div>
+                <span className="text-xs">Descanso</span>
               </div>
             </div>
           </div>
@@ -2102,7 +2337,7 @@ const App = () => {
                               type="text"
                               value={editingSplitName}
                               onChange={(e) => setEditingSplitName(e.target.value)}
-                              className="flex-1 bg-slate-700 text-white px-3 py-1.5 rounded border border-slate-600 focus:outline-none focus:border-blue-500"
+                              className={`flex-1 ${inputBg} ${textMain} px-3 py-1.5 rounded border ${inputBorder} focus:outline-none focus:border-blue-500`}
                               autoFocus
                             />
                             <button
@@ -2132,44 +2367,123 @@ const App = () => {
                                 setEditingSplitName(split)
                               }}
                               className={`p-1.5 ${isDarkMode ? 'text-indigo-400 hover:text-indigo-300' : 'text-indigo-600 hover:text-indigo-700'}`}
+                              title="Editar nombre"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
+                            {Object.keys(customSplits).length > 1 && (
+                              <button
+                                onClick={() => {
+                                  setSplitToDelete(split)
+                                  setDeleteModalType('split')
+                                  setShowDeleteModal(true)
+                                }}
+                                className={`p-1.5 ${isDarkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'}`}
+                                title="Eliminar split"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
-                      <div className="flex flex-wrap gap-2 ml-4">
-                        {customSplits[split]?.map((ex) => (
-                          <div key={ex} className={`flex items-center gap-1 ${bgCard} px-2 py-1 rounded-full text-xs`}>
-                            <span className={textMain}>{ex}</span>
-                            <button
-                              onClick={() => removeExerciseFromSplit(split, ex)}
-                              className="text-red-400 hover:text-red-300"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
+                      <div className="ml-4 space-y-3">
+                        <div>
+                          <label className={`block text-xs ${textSecondary} mb-2`}>Músculos del Split:</label>
+                          <div className="flex flex-wrap gap-2">
+                            {AVAILABLE_MUSCLES.map((muscle) => {
+                              const isSelected = (splitMuscles[split] || []).includes(muscle)
+                              return (
+                                <button
+                                  key={muscle}
+                                  onClick={() => toggleMuscleInSplit(split, muscle)}
+                                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                                    isSelected
+                                      ? isDarkMode
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-indigo-600 text-white'
+                                      : `${bgCard} ${textMain} border ${borderSecondary} hover:${bgCardHover}`
+                                  }`}
+                                >
+                                  {muscle}
+                                </button>
+                              )
+                            })}
                           </div>
-                        ))}
-                        <input
-                          type="text"
-                          placeholder="Agregar ejercicio..."
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                              addExerciseToSplit(split, e.currentTarget.value.trim())
-                              e.currentTarget.value = ''
-                            }
-                          }}
-                          className={`${inputBg} ${textMain} px-2 py-1 rounded text-xs border ${inputBorder} focus:outline-none focus:border-indigo-500 w-32`}
-                        />
+                        </div>
+                        <div>
+                          <label className={`block text-xs ${textSecondary} mb-2`}>Ejercicios:</label>
+                          <div className="flex flex-wrap gap-2">
+                            {customSplits[split]?.map((ex) => (
+                              <div key={ex} className={`flex items-center gap-1 ${bgCard} px-2 py-1 rounded-full text-xs`}>
+                                <span className={textMain}>{ex}</span>
+                                <button
+                                  onClick={() => removeExerciseFromSplit(split, ex)}
+                                  className="text-red-400 hover:text-red-300"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                            <input
+                              type="text"
+                              placeholder="Agregar ejercicio..."
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                                  addExerciseToSplit(split, e.currentTarget.value.trim())
+                                  e.currentTarget.value = ''
+                                }
+                              }}
+                              className={`${inputBg} ${textMain} px-2 py-1 rounded text-xs border ${inputBorder} focus:outline-none focus:border-indigo-500 w-32`}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
-                  <button
-                    onClick={saveCustomSplits}
-                    className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 rounded-lg transition-all"
-                  >
-                    Guardar Cambios
-                  </button>
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={saveCustomSplits}
+                      className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 rounded-lg transition-all"
+                    >
+                      Guardar Cambios
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const newSplitName = `Split ${Object.keys(customSplits).length + 1}`
+                        const newSplits = { ...customSplits, [newSplitName]: [] }
+                        const newColors = { ...splitColors }
+                        const newMuscles = { ...splitMuscles }
+                        const splitIndex = Object.keys(newSplits).length - 1
+                        newColors[newSplitName] = generateSplitColor(newSplitName, splitIndex)
+                        newMuscles[newSplitName] = []
+                        setCustomSplits(newSplits)
+                        setSplitColors(newColors)
+                        setSplitMuscles(newMuscles)
+                        setSelectedSplit(newSplitName)
+                        setEditingSplit(newSplitName)
+                        setEditingSplitName(newSplitName)
+                        
+                        // Guardar inmediatamente
+                        if (db && userId) {
+                          try {
+                            const splitsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splits')
+                            await setDoc(splitsRef, newSplits, { merge: true })
+                            const colorsRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitColors')
+                            await setDoc(colorsRef, newColors, { merge: true })
+                            const musclesRef = doc(db, 'artifacts', APP_ID, 'users', userId, 'settings', 'splitMuscles')
+                            await setDoc(musclesRef, newMuscles, { merge: true })
+                          } catch (error) {
+                            console.error('Error saving new split', error)
+                          }
+                        }
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 px-4 rounded-lg transition-all flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Nuevo Split
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -2177,7 +2491,7 @@ const App = () => {
             {/* Lista de Ejercicios Agregados */}
             <div className="space-y-6">
               {currentExercises.map((exercise, exIndex) => (
-                <div key={exercise.id} className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                <div key={exercise.id} className={`${bgCard} border ${borderMain} p-4 rounded-xl`}>
                   <div className="flex justify-between items-center mb-3">
                     <input
                       type="text"
@@ -2191,7 +2505,7 @@ const App = () => {
                         newEx[exIndex].name = e.target.value
                         setCurrentExercises(newEx)
                       }}
-                      className="bg-transparent text-lg font-semibold text-white focus:outline-none w-full disabled:opacity-50"
+                      className={`${inputBg} text-lg font-semibold ${textMain} focus:outline-none w-full disabled:opacity-50`}
                       disabled={!userId}
                     />
                     <button
@@ -2227,7 +2541,7 @@ const App = () => {
                             placeholder="0"
                             value={set.weight}
                             onChange={(e) => updateSet(exIndex, setIndex, 'weight', e.target.value)}
-                            className={`w-full ${inputBg} border ${inputBorder} rounded p-2 text-center ${textMain} focus:border-cyan-500 focus:outline-none disabled:opacity-50`}
+                            className={`w-full ${inputBg} ${isDarkMode ? '' : 'bg-white'} border ${inputBorder} rounded p-2 text-center ${textMain} focus:border-cyan-500 focus:outline-none disabled:opacity-50`}
                             disabled={!userId}
                           />
                         </div>
@@ -2237,7 +2551,7 @@ const App = () => {
                             placeholder="0"
                             value={set.reps}
                             onChange={(e) => updateSet(exIndex, setIndex, 'reps', e.target.value)}
-                            className={`w-full ${inputBg} border ${inputBorder} rounded p-2 text-center ${textMain} focus:border-cyan-500 focus:outline-none disabled:opacity-50`}
+                            className={`w-full ${inputBg} ${isDarkMode ? '' : 'bg-white'} border ${inputBorder} rounded p-2 text-center ${textMain} focus:border-cyan-500 focus:outline-none disabled:opacity-50`}
                             disabled={!userId}
                           />
                         </div>
@@ -2266,24 +2580,48 @@ const App = () => {
 
             {/* Agregar nuevo ejercicio */}
             <div className={`mt-6 p-4 ${bgCardHover} rounded-xl border border-dashed ${borderSecondary} ${!userId ? 'opacity-50 pointer-events-none' : ''}`}>
-              <p className={`text-sm ${textSecondary} mb-3`}>Agregar Ejercicio Sugerido para {selectedSplit}</p>
-              <div className="flex flex-wrap gap-2">
-                {customSplits[selectedSplit]?.map((ex) => (
-                  <button
-                    key={ex}
-                    onClick={() => handleAddExercise(ex)}
-                    className={`text-xs ${bgCard} hover:${bgCardHover} ${textMain} px-3 py-1.5 rounded-full transition-colors disabled:opacity-50`}
-                    disabled={!userId}
-                  >
-                    {ex}
-                  </button>
-                ))}
+              <p className={`text-sm ${textSecondary} mb-3`}>Ejercicios Sugeridos para {selectedSplit}</p>
+              <div className="space-y-3">
+                {customSplits[selectedSplit] && customSplits[selectedSplit].length > 0 && (
+                  <div>
+                    <p className={`text-xs ${textMuted} mb-2`}>Del Split:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {customSplits[selectedSplit].map((ex) => (
+                        <button
+                          key={ex}
+                          onClick={() => handleAddExercise(ex)}
+                          className={`text-xs ${bgCard} hover:${bgCardHover} ${textMain} px-3 py-1.5 rounded-full transition-colors disabled:opacity-50`}
+                          disabled={!userId}
+                        >
+                          {ex}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {getMostUsedExercises.length > 0 && (
+                  <div>
+                    <p className={`text-xs ${textMuted} mb-2`}>Más Usados:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {getMostUsedExercises.map((ex) => (
+                        <button
+                          key={ex}
+                          onClick={() => handleAddExercise(ex)}
+                          className={`text-xs ${isDarkMode ? 'bg-indigo-900/50 hover:bg-indigo-900/70' : 'bg-indigo-100 hover:bg-indigo-200'} ${isDarkMode ? 'text-indigo-200' : 'text-indigo-800'} px-3 py-1.5 rounded-full transition-colors disabled:opacity-50`}
+                          disabled={!userId}
+                        >
+                          {ex}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <button
                   onClick={() => handleAddExercise('Nuevo Ejercicio')}
                   className={`text-xs ${bgCard} border ${borderSecondary} hover:${borderMain} ${textSecondary} px-3 py-1.5 rounded-full transition-colors disabled:opacity-50`}
                   disabled={!userId}
                 >
-                  Personalizado
+                  + Personalizado
                 </button>
               </div>
             </div>
@@ -2376,10 +2714,23 @@ const App = () => {
                   <div className="mb-4">
                     <div className="flex flex-wrap gap-2">
                       {Object.keys(customSplits).map((split, index) => {
-                        const colors = ['#3b82f6', '#10b981', '#ef4444'] // Azul, Verde, Rojo
+                        const splitColor = generateSplitColor(split, index)
+                        const colorMap: Record<string, string> = {
+                          blue: '#3b82f6',
+                          purple: '#9333ea',
+                          red: '#ef4444',
+                          green: '#10b981',
+                          orange: '#f97316',
+                          cyan: '#06b6d4',
+                          pink: '#ec4899',
+                          indigo: '#6366f1',
+                          amber: '#f59e0b',
+                          teal: '#14b8a6'
+                        }
+                        const hexColor = colorMap[splitColor] || colorMap.blue
                         return (
                           <div key={split} className="flex items-center gap-1">
-                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: colors[index] }}></div>
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: hexColor }}></div>
                             <span className={`text-xs ${textSecondary}`}>{split}</span>
                           </div>
                         )
@@ -2411,7 +2762,20 @@ const App = () => {
                           labelFormatter={(label) => `Fecha: ${label}`}
                         />
                           {Object.keys(customSplits).map((split, index) => {
-                            const colors = ['#3b82f6', '#10b981', '#ef4444'] // Azul, Verde, Rojo
+                            const splitColor = generateSplitColor(split, index)
+                            const colorMap: Record<string, string> = {
+                              blue: '#3b82f6',
+                              purple: '#9333ea',
+                              red: '#ef4444',
+                              green: '#10b981',
+                              orange: '#f97316',
+                              cyan: '#06b6d4',
+                              pink: '#ec4899',
+                              indigo: '#6366f1',
+                              amber: '#f59e0b',
+                              teal: '#14b8a6'
+                            }
+                            const hexColor = colorMap[splitColor] || colorMap.blue
                             const data = combinedSplitChartData[split] || []
                             if (data.length === 0) return null
                             return (
@@ -2420,9 +2784,9 @@ const App = () => {
                                 type="monotone" 
                                 data={data}
                                 dataKey="volume"
-                                stroke={colors[index]} 
+                                stroke={hexColor} 
                                 strokeWidth={2.5}
-                                dot={{ fill: colors[index], r: 4 }}
+                                dot={{ fill: hexColor, r: 4 }}
                                 name={split}
                                 connectNulls={false}
                               />
